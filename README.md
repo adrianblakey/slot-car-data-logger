@@ -55,11 +55,11 @@ Notes about the hardware.
 
 Channels:
 
-GP18 - external LED, low = ON
-GP22 - Push button
-GP26/ADC0 - Current
-GP27/ADC1 - Controller + output voltage to track and motor 
-GP28/ADC2 - Track incoming + supply voltage
+  GP18 - external LED, low = ON  
+  GP22 - Push button  
+  GP26/ADC0 - Current  
+  GP27/ADC1 - Controller + output voltage to track and motor  
+  GP28/ADC2 - Track incoming + supply voltage  
 
 Note: Set GP18 to output drive strength 12mA, to minimise volt-drop in the micro (PADS_BANK0: GPIOx Registers) 
 
@@ -110,6 +110,3 @@ Better errors
 ### Issues:
 
 How to stream data out.
-
-"""
-
