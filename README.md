@@ -95,18 +95,17 @@ serve up the collected data.
 
 ### TODO:
 
-Lots
-Saving files
-Re integrate the led classes and button - modularize the code
-JS for plotting plot.ly say
-Simplify the design to display values on a Web pages as they are read rather than trying queue and write them?
-Use the async_button class https://circuitpython-async-button.readthedocs.io/en/latest/
-File system logging
-Run calibration when enter the state. 
-Network names - bonjour would be best.
-BT.
-Better errors
+Lots  
+Saving files. Pain in the neck to remount the fs.  
+Re integrate the led classes and button - modularize the code  
+JS for plotting plot.ly say  
+Use the async_button class https://circuitpython-async-button.readthedocs.io/en/latest/  
+File system logging  
+Run calibration when enter the state.  
+Network names - fix   
+BT.  
+Better errors  
 
 ### Issues:
 
-How to stream data out.
+How to stream data out.  
