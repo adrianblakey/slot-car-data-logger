@@ -55,11 +55,11 @@ Notes about the hardware.
 
 Channels:
 
-  GP18 - external LED, low = ON  
-  GP22 - Push button  
-  GP26/ADC0 - Current  
-  GP27/ADC1 - Controller + output voltage to track and motor  
-  GP28/ADC2 - Track incoming + supply voltage  
+  GP18      - External LED, low = ON  
+  GP22      - Push button  
+  GP26/ADC0 - Current drawn by the motor through the hand controller  
+  GP27/ADC1 - Output voltage to track and motor from the hand controller  
+  GP28/ADC2 - Track incoming supply voltage  
 
 Note: Set GP18 to output drive strength 12mA, to minimise volt-drop in the micro (PADS_BANK0: GPIOx Registers) 
 
@@ -95,18 +95,17 @@ serve up the collected data.
 
 ### TODO:
 
-Lots
-Saving files
-Re integrate the led classes and button - modularize the code
-JS for plotting plot.ly say
-Simplify the design to display values on a Web pages as they are read rather than trying queue and write them?
-Use the async_button class https://circuitpython-async-button.readthedocs.io/en/latest/
-File system logging
-Run calibration when enter the state. 
-Network names - bonjour would be best.
-BT.
-Better errors
+Lots  
+Saving files. Pain in the neck to remount the fs.  
+Re integrate the led classes and button - modularize the code  
+JS for plotting plot.ly say  
+Use the async_button class https://circuitpython-async-button.readthedocs.io/en/latest/  
+File system logging  
+Run calibration when enter the state.  
+Network names - fix   
+BT.  
+Better errors  
 
 ### Issues:
 
-How to stream data out.
+How to stream data out.  
