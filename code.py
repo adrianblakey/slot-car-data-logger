@@ -10,8 +10,11 @@ import wifi
 import mdns
 import board
 import analogio
+import digitalio
+from adafruit_debouncer import Debouncer
 
-from adafruit_httpserver import Server, Request, Response, SSEResponse, GET
+
+from adafruit_httpserver import Server, Request, Response, FileResponse, MIMETypes, GET, JSONResponse, SSEResponse
 
 
 def scan_wifi_for(ssid: str) -> bool:
@@ -204,7 +207,7 @@ HTML_TEMPLATE = """
             google.charts.setOnLoadCallback(init);
 
             let db;
-            const DB_NAME = 'logger_db_' + Date.now(); // TODO one database a day?
+            const DB_NAME = 'logger_db_'
             const OS_NAME = 'logger_os';
             
             function init() {
@@ -243,12 +246,22 @@ HTML_TEMPLATE = """
                 var chart = new google.charts.Line(document.getElementById('linechart_material'));
                 
                 function initDb() {
-                    const openRequest = window.indexedDB.open(DB_NAME, 1);
+                
+                    const promise = indexedDB.databases();
+                        promise.then((databases) => {
+                        console.log(databases);
+                    });
+                
+                
+                    let now = new Date();
+                    // one db per day
+                    db_name = DB_NAME + now.getFullYear() + now.getMonth() + now.getDate();
+                    const openRequest = window.indexedDB.open(db_name, 1);
                     openRequest.addEventListener("error", () =>
-                        console.error("Database failed to open")
+                        console.error("Database", db_name, "failed to open")
                     );
                     openRequest.addEventListener("success", () => {
-                        console.log("Database opened successfully");
+                        console.log("Database", db_name ,"opened successfully");
 
                         // Store the opened database object in the db variable. This is used a lot below
                         db = openRequest.result;
@@ -270,17 +283,16 @@ HTML_TEMPLATE = """
                         objectStore.createIndex("c_current", "c_current", { unique: false });
                         objectStore.createIndex("c_volts", "c_volts", { unique: false });
                         objectStore.createIndex("t_volts", "t_volts", { unique: false });
-                        objectStore.createIndex("mark", "mark", { unique: false });
                         console.log("Database setup complete");
                     });
                 }
-                function addData(ts, c_current, c_volts, t_volts, mark) {
+                function addData(ts, c_current, c_volts, t_volts) {
                     // prevent default - we don't want the form to submit in the conventional way
                     // e.preventDefault();
                     // console.log("adding", ts, c_current, c_volts, t_volts, mark);
                     // grab the values entered into the form fields and store them in an object ready for being inserted into the DB
                     const newItem = { ts: ts, c_current: c_current,
-                                    c_volts: c_volts, t_volts: t_volts, mark: mark};
+                                    c_volts: c_volts, t_volts: t_volts};
 
                     // open a read/write db transaction, ready for adding the data
                     const transaction = db.transaction([OS_NAME], "readwrite");
@@ -318,8 +330,9 @@ HTML_TEMPLATE = """
                     eventSource.onmessage = onMessage;
                     eventSource.onopen = onOpen;
                 }
-                var redraw = 0
-                var msgCt = 0
+                var redraw = 0;
+                var msgCt = 0;
+                var saveData = false;
                 function onOpen(event) {
                     console.log("Starting connection to eventsource.");
                 }
@@ -355,9 +368,20 @@ HTML_TEMPLATE = """
                         data.removeRows(0, 100);
                     }
                     //el = tok[0].substring(1);   // lop the first char off
-                    // TODO handle the mark - only save data between marks?
-                    data.addRow([parseInt(tok[0]),parseFloat(tok[1]),parseFloat(tok[2]),parseFloat(tok[3])]);
-                    addData(tok[0], tok[1], tok[2], tok[3], tok[4]);
+                    // Handle the mark - only save data between marks?
+                    if (tok[4] == '1') {
+                        if (saveData) {
+                            console.log("mark found stop saving data");
+                            saveData = false;
+                        } else {
+                            console.log("mark found start saving data");
+                            saveData = true;
+                        }
+                    }
+                    if (saveData) {
+                        data.addRow([parseInt(tok[0]),parseFloat(tok[1]),parseFloat(tok[2]),parseFloat(tok[3])]);
+                    }
+                    addData(tok[0], tok[1], tok[2], tok[3]);
                 }
                 initDb();
                 initializeEventSource();
@@ -373,7 +397,7 @@ HTML_TEMPLATE = """
             <div id="linechart_material" style="width: 900px; height: 500px"></div>
         </div>
         <div id="edit_data">
-            <!-- Display the available databases and offer a/c/d/display -->
+            <!-- TODO Display the available databases and offer a/c/d/display -->
         </div>
     </body>
 </html>
