@@ -23,11 +23,11 @@ import microcontroller
 import digitalio
 from adafruit_debouncer import Debouncer
 
+
 from adafruit_httpserver import Server, Request, Response, FileResponse, MIMETypes, GET, JSONResponse, SSEResponse
 
 debug = True
 LANE_COLORS = ['bla', 'pur', 'yel', 'blu', 'ora', 'gre', 'whi', 'red']
-
 
 def scan_wifi_for(ssid: str) -> bool:
     """Scans for a specific ssid"""
@@ -35,8 +35,7 @@ def scan_wifi_for(ssid: str) -> bool:
     for network in wifi.radio.start_scanning_networks():
         if network.ssid == ssid:
             if debug:
-                print("Found matching WiFi network:\t%s\tRSSI: %d\tChannel: %d" % (
-                str(network.ssid, "utf-8"), network.rssi, network.channel))
+                print("Found matching WiFi network:\t%s\tRSSI: %d\tChannel: %d" % (str(network.ssid, "utf-8"), network.rssi, network.channel))
             rc = True
             break
     wifi.radio.stop_scanning_networks()
@@ -50,8 +49,7 @@ def look_for_host(hostname: str) -> str:
         print("Looking for hostname:", hostname)
     temp_pool = socketpool.SocketPool(wifi.radio)
     try:
-        [(family, socket_type, socket_protocol, flags, (ip, port))] = temp_pool.getaddrinfo(host=hostname,
-                                                                                            port=80)  # port is required
+        [(family, socket_type, socket_protocol, flags, (ip, port))] = temp_pool.getaddrinfo(host=hostname, port=80)  # port is required
         if debug:
             print("Found address:", ip)
     except OSError as e:
@@ -67,10 +65,10 @@ def uniqueify_hostname(hostname: str) -> str:
     if debug:
         print('uniqueify_hostname()', hostname)
     # TODO recurses forever if all colors used up!
-    # Three chars to cover the 10 char hostname bug
+     # Three chars to cover the 10 char hostname bug
     ip = look_for_host(hostname)
-    if ip:  # found a match
-        if ip == wifi.radio.ipv4_address:  # If the IP address matches my hostname then reuse it
+    if ip:                                      # found a match
+        if ip == wifi.radio.ipv4_address:       # If the IP address matches my hostname then reuse it
             return hostname
         tokens = hostname.split("-")
         if len(tokens) > 1:
@@ -80,8 +78,8 @@ def uniqueify_hostname(hostname: str) -> str:
             for i, lane_color in enumerate(LANE_COLORS):  # Find the next color
                 if debug:
                     print("lane color", lane_color)
-                if color == lane_color:  # Match my current color - which is taken
-                    if i == len(LANE_COLORS) - 1:  # Last one match - so it resets
+                if color == lane_color:               # Match my current color - which is taken
+                    if i == len(LANE_COLORS) - 1:        # Last one match - so it resets
                         i = -1
                     hostname = tokens[0] + "-" + LANE_COLORS[i + 1]
                     break
@@ -89,7 +87,7 @@ def uniqueify_hostname(hostname: str) -> str:
             # No suffix - pick the first one
             hostname = hostname + "-" + LANE_COLORS[0]
         hostname = uniqueify_hostname(hostname)
-    else:  # hostname not found - use it
+    else:                             # hostname not found - use it
         pass
     return hostname
 
@@ -122,7 +120,7 @@ def connect_to_wifi():
     # Look for this host on the network, use it if not found
     hostname = uniqueify_hostname("logger-bla")  # This name covers the 10 digit time string
 
-    wifi.radio.stop_station()  # Discard temp connection
+    wifi.radio.stop_station()                    # Discard temp connection
 
     if debug:
         print("Wifi connection:", wifi.radio.connected)
@@ -225,30 +223,42 @@ HTML_TEMPLATE = """
 <html lang="en">
     <head>
         <style>
-        chart_wrap {
-        position: relative;
-        padding-bottom: 100%;
-        height: 0;
-        overflow:hidden;
-        }
-
-        linechart_material {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width:100%;
-        height:500px;
-        }
+            .chartWithMarkerOverlay {
+                position: relative;
+                width: 700px;
+            }
+            .overlay-text {
+                width: 200px;
+                height: 200px;
+                position: absolute;
+                top: 60px;   /* chartArea top  */
+                left: 180px; /* chartArea left */
+            }
+            .overlay-marker {
+                width: 50px;
+                height: 50px;
+                position: absolute;
+                top: 53px;   /* chartArea top */
+                left: 528px; /* chartArea left */
+            }
+            linechart {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width:100%;
+                height:600px;
+            }
         </style>
         <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
         <script type="text/javascript">
-            google.charts.load('current', {'packages':['line']});
+            // Use the original charts - not material - so we have overlays ...
+            google.charts.load('current', {'packages':['corechart']});
             google.charts.setOnLoadCallback(init);
 
             let db;
             const DB_NAME = 'logger_db_';
             const OS_NAME = 'logger_os';
-
+            
             function init() {
 
                 var data = new google.visualization.DataTable();
@@ -257,13 +267,15 @@ HTML_TEMPLATE = """
                 data.addColumn('number', 'Controller Voltage');
                 data.addColumn('number', 'Track Voltage');
 
-                var materialOptions = {
-                    title: 'Red Lane Data Logger',
+                var options = {
+                    theme: 'material',
+                    title: 'Red Lane Logger',
                     titlePosition: 'out',
                     titleTextStyle: {fontSize: 28, bold: true},
-                    legend: { position: 'out' },
+                    chartArea: {backgroundColor: 'white'},
+                    legend: { position: 'out'},
                     width: 1000,
-                    height: 600,
+                    height: 800,
                     hAxis: {
                         gridlines: {color: 'grey', minSpacing: 40, multiple: 1, interval: [1], count: 10},
                         minorGridlines: {color: 'violet', interval: [1]},
@@ -271,33 +283,50 @@ HTML_TEMPLATE = """
                         title: 'Elapse (sec)', 
                         textStyle: {color: 'black', bold: true},
                         format: '###.###',
-                        viewWindow: {max: 10, min: 0}
+                        viewWindow: {max: 10, min: 0},
+                        showTextEvery: 1
                     },
                     series: {
-                        0: {color: 'red', lineWidth: 2, targetAxisIndex: 0},
-                        1: {color: 'blue', lineWidth: 2, targetAxisIndex: 1},
-                        2: {color: 'lightblue', lineWidth: 2, targetAxisIndex: 1}
+                        0: {color: 'red', lineWidth: 4, targetAxisIndex: 0},
+                        1: {color: 'blue', lineWidth: 4, targetAxisIndex: 1},
+                        2: {color: 'lightblue', lineWidth: 4, targetAxisIndex: 1}
                     },
                     vAxes: {
                         0: {
                             title:'Current (A)',
                             textStyle: {color: 'red', bold: true},
-                            viewWindow: {min: -20, max: 20}
+                            viewWindow: {min: -20, max: 20},
+                            gridlines: {color: 'red', minSpacing: 20, count: 20}
                         },
                         1: {
                             title:'Voltage (V)',
                             textStyle: {color: 'blue', bold: true},
-                            viewWindow: {min: -15, max: 15}
+                            viewWindow: {min: -15, max: 15},
+                            gridlines: {color: 'blue', minSpacing: 20, count: 20}
                         }
                     },
                     animation: {
                         startup: true,
-                        duration: 20,
+                        duration: 0,
                         easing: 'linear'
                     }
                 };
-
-                var chart = new google.charts.Line(document.getElementById('linechart_material'));
+      
+                function placeMarker(dataTable) {
+                    //console.log('Place marker', typeof(this), this, typeof(chart), chart, typeof(dataTable), dataTable);
+                    // TODO if we are marking data
+                    var cli = this.getChartLayoutInterface();
+                    var chartArea = cli.getChartAreaBoundingBox();
+                    // "Zombies" is element #5.
+                    document.querySelector('.overlay-marker').style.top = Math.floor(cli.getYLocation(dataTable.getValue(5, 1))) - 50 + "px";
+                    document.querySelector('.overlay-marker').style.left = Math.floor(cli.getXLocation(5)) - 10 + "px";
+                };
+                
+                var chart = new google.visualization.LineChart(document.getElementById('linechart'));
+                // console.log("get the layout interface");
+                // var cli = chart.getChartLayoutInterface();
+                // var chartArea = cli.getChartAreaBoundingBox();
+                google.visualization.events.addListener(chart, 'ready', placeMarker.bind(chart, data));
 
                 function initDb() {
                     console.log("initDB");
@@ -305,8 +334,8 @@ HTML_TEMPLATE = """
                         promise.then((databases) => {
                         console.log(databases);
                     });
-
-
+                
+                
                     let now = new Date();
                     // one db per day
                     db_name = DB_NAME + now.getFullYear() + now.getMonth() + now.getDate() + now.getHours() + now.getMinutes() + now.getSeconds();
@@ -389,7 +418,7 @@ HTML_TEMPLATE = """
                     eventSource.onmessage = onMessage;
                     eventSource.onopen = onOpen;
                 }
-
+                
                 var saveData = false;         // cache data in database or not
                 firstElapseTime = 0
                 function onOpen(event) {
@@ -410,7 +439,7 @@ HTML_TEMPLATE = """
                 function onMessage(event) {
                     // console.log("EventSource message received:", event);
                     tok = event.data.split(',');
-                    console.log("Update values", tok[0], tok[1], tok[2], tok[3], tok[4]);
+                    // console.log("Update values", tok[0], tok[1], tok[2], tok[3], tok[4]);
                     xVal = parseInt(tok[0]);                  // elapse time as an int
                     rowCount = data.getNumberOfRows();
                     if (rowCount == 0) {  // before we add anything, save the first e time
@@ -422,16 +451,16 @@ HTML_TEMPLATE = """
                         if (saveData) {
                             console.log("mark found stop saving data");
                             // TODO change the display  to show it's being saved, create an overlay
-                            materialOptions.series[0].lineWidth = 1;
-                            materialOptions.series[1].lineWidth = 1;
-                            materialOptions.series[2].lineWidth = 1;
+                            options.series[0].lineWidth = 1;
+                            options.series[1].lineWidth = 1;
+                            options.series[2].lineWidth = 1;
                             saveData = false;
                         } else {
                             console.log("mark found start saving data");
                             // TODO change the display  to show it's being saved, create an overlay
-                            materialOptions.series[0].lineWidth = 10;
-                            materialOptions.series[1].lineWidth = 10;
-                            materialOptions.series[2].lineWidth = 10;
+                            options.series[0].lineWidth = 10;
+                            options.series[1].lineWidth = 10;
+                            options.series[2].lineWidth = 10;
                             saveData = true;
                         }
                     }
@@ -448,31 +477,42 @@ HTML_TEMPLATE = """
                     console.log('Normalized etime', eTime);
                     data.addRow([parseFloat(eTime),parseFloat(tok[1]),parseFloat(tok[2]),parseFloat(tok[3])]);
 
-                    // console.log('Max, min, etime', materialOptions.hAxis.viewWindow.max, materialOptions.hAxis.viewWindow.min, eTime);
+                    // console.log('Max, min, etime', options.hAxis.viewWindow.max, options.hAxis.viewWindow.min, eTime);
+                    // TODO Move the vw by 5 sec when it gets to 10 to preserve 5 sec of history
+                    // the total vw needs to be a couple of laps say 15 secs to preserve context
                     latestX = Math.ceil(eTime);  // Round up
-                    console.log('if eTime ceil is bigger than max, move vw', latestX, materialOptions.hAxis.viewWindow.min, materialOptions.hAxis.viewWindow.max);
-                    if (latestX > materialOptions.hAxis.viewWindow.max) {       // step the vw forward in front of the value
-                        materialOptions.hAxis.viewWindow.max++;
-                        materialOptions.hAxis.viewWindow.min++;
-                        console.log('Min, max, rowct', materialOptions.hAxis.viewWindow.min, materialOptions.hAxis.viewWindow.max, data.getNumberOfRows());
+                    console.log('if eTime ceil is bigger than max, move vw', latestX, options.hAxis.viewWindow.min, options.hAxis.viewWindow.max);
+                    if (latestX > options.hAxis.viewWindow.max) {       // step the vw forward in front of the value
+                        options.hAxis.viewWindow.max++;
+                        options.hAxis.viewWindow.min++;
+                        console.log('Min, max, rowct', options.hAxis.viewWindow.min, options.hAxis.viewWindow.max, data.getNumberOfRows());
                         data.removeRows(0, Math.floor(rowCount / 10) - 1);           // garbage collect
                     }
-                    // console.log("draw", materialOptions);
-                    chart.draw(data, google.charts.Line.convertOptions(materialOptions));
+                    // console.log("draw", options);
+                    chart.draw(data, options);
                 }
-
+                
                 initDb();
                 initializeEventSource();
-                chart.draw(data, google.charts.Line.convertOptions(materialOptions));
-
+                chart.draw(data, options);
             } // end init
-
+      
         </script>
-        <title>Server-Sent Events Clients</title>
+        <title>>Data Logger</title>
     </head>
     <body>
-        <div id="chart_wrap">
-            <div id="linechart_material" style="width: 900px; height: 500px"></div>
+        <div class="chartWithMarkerOverlay">
+            <div id="linechart" style="width: 1000px; height: 600px"></div>
+            <!--
+            <div class="overlay-text">
+                <div style="font-family:'Arial Black'; font-size: 128px;">88</div>
+                <div style="color: #b44; font-family:'Arial Black'; font-size: 32px; letter-spacing: .21em; margin-top:50px; margin-left:5px;">zombie</div>
+                <div style="color: #444; font-family:'Arial Black'; font-size: 32px; letter-spacing: .15em; margin-top:15px; margin-left:5px;">attacks</div>
+            </div>
+            -->
+            <div class="overlay-marker">
+                <img src="https://developers.google.com/chart/interactive/images/zombie_150.png" height="50">
+  </        </div>
         </div>
         <div id="edit_data">
             <!-- TODO Display the available databases and offer a/c/d/display -->
@@ -504,5 +544,5 @@ while True:
     if connected_client.ready:
         # lt = monotonic_ns()
         # if lt % 1000000 == 0:  # simulate a button press
-        # connected_client.collected = lt
+            # connected_client.collected = lt
         connected_client.send_message()
