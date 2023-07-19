@@ -10,7 +10,7 @@ Channels:
   GP22      - Push button
   GP26/ADC0 - Current drawn by the motor through the hand controller
   GP27/ADC1 - Output voltage to track and motor from the hand controller
-  GP28/ADC2 - Track incoming supply voltag
+  GP28/ADC2 - Track incoming supply voltage
 
 TODO
 Button press
@@ -34,7 +34,7 @@ from adafruit_debouncer import Debouncer
 from adafruit_httpserver import Server, Request, Response, FileResponse, MIMETypes, GET, JSONResponse, SSEResponse
 
 debug = True
-LANE_COLORS = ['bla', 'pur', 'yel', 'blu', 'ora', 'gre', 'whi', 'red']
+LANE_COLORS = ['red', 'whi', 'gre', 'ora', 'blu', 'yel', 'pur', 'bla']
 ID = "Slot Car Data Logger V1.0"
 GIT = "https://github.com/adrianblakey/slot-car-data-logger"
 
@@ -45,6 +45,8 @@ led.value = True
 board_led = digitalio.DigitalInOut(board.LED)
 board_led.direction = digitalio.Direction.OUTPUT
 board_led.value = False
+
+SF: float = 17.966 / 3.3
 
 def flash_led(on_time: float) -> None:
     led.value = False
@@ -152,7 +154,7 @@ def connect_to_wifi():
             print("DEBUG - Unable to connect with default credentials")
         raise RuntimeError('Bad WiFi password')
 
-    hostname = uniqueify_hostname("logger-bla")  # This name covers the 10 digit time string bug
+    hostname = uniqueify_hostname("logger-red")  # This name covers the 10 digit time string bug
     wifi.radio.stop_station()  # Discard temp connection
 
     if debug:
@@ -176,7 +178,7 @@ def advertise_service():
         mdns_server = mdns.Server(wifi.radio)
         mdns_server.hostname = wifi.radio.hostname
         mdns_server.instance_name = 'Slot car data logger'
-    #    mdns_server.advertise_service(service_type="_httpslots", protocol="_tcp", port=80)
+    #    mdns_server.advertise_service(service_type="_http", protocol="_tcp", port=80)
     except RuntimeError as e:
         if debug:
             print("DEBUG - MDNS setting failed:", str(e))
@@ -225,8 +227,9 @@ class ConnectedClient:
                 analogio.AnalogIn(board.GP27) as cV, \
                 analogio.AnalogIn(board.GP28) as tV:
             # TODO add/subtract the zero calibration value
+            # Track voltage, controller voltage, controller current
             self._response.send_event(
-                f"{monotonic_ns()},{(cI.value * 3.3) / 65536},{(cV.value * 3.3) / 65536},{(tV.value * 3.3) / 65536},{mark}")
+                f"{monotonic_ns()},{((tV.value * 3.3) / 65536) * SF},{((cV.value * 3.3) / 65536) * SF},{(cI.value * 3.3) / 65536},{mark}")
         self._next_message = monotonic() + 1
         board_led.value = not board_led.value
 
@@ -313,10 +316,11 @@ HTML_TEMPLATE = """
 
                 var data = new google.visualization.DataTable();
                 data.addColumn('number', 'Elapse');
-                data.addColumn('number', 'Controller Current');
-                data.addColumn('number', 'Controller Voltage');
                 data.addColumn('number', 'Track Voltage');
+                data.addColumn('number', 'Controller Voltage');
+                data.addColumn('number', 'Controller Current');
 
+   
                 var materialOptions = {
                     title: 'Data Logger',
                     titlePosition: 'out',
@@ -334,20 +338,20 @@ HTML_TEMPLATE = """
                         viewWindow: {max: 10, min: 0}
                     },
                     series: {
-                        0: {color: 'red', lineWidth: 2, targetAxisIndex: 0},
-                        1: {color: 'blue', lineWidth: 2, targetAxisIndex: 1},
-                        2: {color: 'lightblue', lineWidth: 2, targetAxisIndex: 1}
+                        0: {color: 'lightblue', lineWidth: 2, targetAxisIndex: 0},
+                        1: {color: 'blue', lineWidth: 2, targetAxisIndex: 0},
+                        2: {color: 'red', lineWidth: 2, targetAxisIndex: 1}
                     },
                     vAxes: {
                         0: {
+                            title:'Voltage (V)',
+                            textStyle: {color: 'blue', bold: true},
+                            viewWindow: {min: -18, max: 18}
+                        },
+                        1: {
                             title:'Current (A)',
                             textStyle: {color: 'red', bold: true},
                             viewWindow: {min: -20, max: 20}
-                        },
-                        1: {
-                            title:'Voltage (V)',
-                            textStyle: {color: 'blue', bold: true},
-                            viewWindow: {min: -15, max: 15}
                         }
                     },
                     animation: {
@@ -429,9 +433,9 @@ HTML_TEMPLATE = """
                             autoIncrement: false,
                         });
                         // Define what data items the objectStore will contain
-                        objectStore.createIndex("c_current", "c_current", { unique: false });
-                        objectStore.createIndex("c_volts", "c_volts", { unique: false });
                         objectStore.createIndex("t_volts", "t_volts", { unique: false });
+                        objectStore.createIndex("c_volts", "c_volts", { unique: false });
+                        objectStore.createIndex("c_current", "c_current", { unique: false });
                         console.log("Database setup complete");
                     }
                     openRequest.addEventListener("upgradeneeded", (e) => {
@@ -441,21 +445,14 @@ HTML_TEMPLATE = """
                         createObjectStore();
                     });
                 }
-                function addData(ts, c_current, c_volts, t_volts) {
+                function addData(ts, t_volts, c_volts, c_current) {
                     // Adds a row to the database
-                    // prevent default - we don't want the form to submit in the conventional way
-                    // e.preventDefault();
-                    // console.log("adding", ts, c_current, c_volts, t_volts, mark);
-                    // grab the values entered into the form fields and store them in an object ready for being inserted into the DB
-                    const newItem = { ts: ts, c_current: c_current,
-                                    c_volts: c_volts, t_volts: t_volts};
-
+                    // console.log("adding", ts, t_volts, c_volts, c_current, mark);
+                    const newItem = { ts: ts, t_volts: t_volts, c_volts: c_volts, c_current: c_current};
                     // open a read/write db transaction, ready for adding the data
                     const transaction = db.transaction([OS_NAME], "readwrite");
-
                     // call an object store that's already been added to the database
                     const objectStore = transaction.objectStore(OS_NAME);
-
                     // Make a request to add our newItem object to the object store
                     const addRequest = objectStore.add(newItem);
 
@@ -463,12 +460,9 @@ HTML_TEMPLATE = """
                         console.log("Data added successfully");
                     });
 
-                // Report on the success of the transaction completing, when everything is done
+                   // Report on the success of the transaction completing, when everything is done
                     transaction.addEventListener("complete", () => {
                         console.log("Transaction completed: database modification finished.");
-
-                        // update the display of data to show the newly added item, by running displayData() again.
-                        // displayData();
                     });
 
                     transaction.addEventListener("error", () =>
@@ -479,8 +473,6 @@ HTML_TEMPLATE = """
                     console.log("Opening eventsource connection");
                     const eventSource = new EventSource('/connect-client');
                     eventSource.onerror = onError;
-                    // eventSource.addEventListener("data", onMessage);
-                    // eventSource.addEventListener("mark", onMark);
                     eventSource.onmessage = onMessage;
                     eventSource.onopen = onOpen;
                 }
@@ -516,10 +508,10 @@ HTML_TEMPLATE = """
                     if (INDEXED_DB_SUPPORTED) {
                         if (tok[4] == '1') {
                             if (saveData) {
-                                console.log("mark found stop saving data");
-                                materialOptions.series[0].lineWidth = 1;
-                                materialOptions.series[1].lineWidth = 1;
-                                materialOptions.series[2].lineWidth = 1;
+                                console.log("Mark found stop saving data");
+                                materialOptions.series[0].lineWidth = 2;
+                                materialOptions.series[1].lineWidth = 2;
+                                materialOptions.series[2].lineWidth = 2;
                                 hAxis.title = 'Elapse (sec)';
                                 hAxis.textStyle.color = 'black';
                                 saveData = false;    
@@ -567,18 +559,19 @@ HTML_TEMPLATE = """
                     // Get a reference to the cursor
                         var data = new google.visualization.DataTable();
                         data.addColumn('number', 'Elapse');
-                        data.addColumn('number', 'Controller Current');
-                        data.addColumn('number', 'Controller Voltage');
                         data.addColumn('number', 'Track Voltage');
+                        data.addColumn('number', 'Controller Voltage');
+                        data.addColumn('number', 'Controller Current');
+
                         const cursor = e.target.result;
 
                         // If there is still another data item to iterate through, keep running this code
                         if (cursor) {
-
                             data.addRow([parseFloat(cursor.value.ts),
-                                parseFloat(cursor.value.c_current),
+                                parseFloat(cursor.value.t_volts),
                                 parseFloat(cursor.value.c_volts),
-                                parseFloat(cursor.value.t_volts)]);
+                                parseFloat(cursor.value.c_current)
+                                ]);
                             // Iterate to the next item in the cursor
                             cursor.continue();
                         } 
@@ -606,6 +599,7 @@ HTML_TEMPLATE = """
                     INDEXED_DB_SUPPORTED = true;
                     initDb();
                 } else {
+                    // TODO display this in the browser
                     console.log("IndexedDB is not supported.");
                 }
                 
@@ -623,13 +617,12 @@ HTML_TEMPLATE = """
         </div>
         <div id="databases_wrap">
             <div id="databases" style="width: auto">
-            <!-- TODO Display the available databases and offer a/c/d/display -->
+            <!-- TODO put this in its own page -->
             </div>
         </div>
     </body>
 </html>
 """
-
 
 MY_ID = """
 <html lang="en">
@@ -648,7 +641,7 @@ MY_ID = """
 MIMETypes.configure(
     default_to="text/plain",
     # Unregistering unnecessary MIME types can save memory
-    keep_for=[".html", ".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".ico"],
+    keep_for=[".html", ".css", ".js", ".ico"],
     # If you need to, you can add additional MIME types
 )
 
