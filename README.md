@@ -153,6 +153,3 @@ Another button and led integration - better feedback.
 Timing the sends and updates.  
 Simplify the install.  
 
-### Issues:
-
-How to stream data out.  
