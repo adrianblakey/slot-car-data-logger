@@ -83,7 +83,7 @@ So the code needs to look for hostname clashes and uniqueify its own name by suf
 With a network connection file(s) can be opened and the ADC inputs can be started, then the web server started to
 serve up the collected data.
 
-### Getting Running
+## Getting Running
 
 The Pi is running the latest release (8.2.0) of Circuit Python, which is a derivative of micro python. More about it here: https://docs.circuitpython.org/en/latest/docs/index.html
 
