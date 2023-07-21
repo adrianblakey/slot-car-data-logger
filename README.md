@@ -142,16 +142,16 @@ Basically:
 
 ### TODO:
 
-Remotely turn on debugging and save a debug log to the file system, rotate and erase it
-Try a different/better js chart library and try to get it to scroll smoothly. Google is not open source and needs an Inet connection.
-Test mode - where some known dataset is displayed.
-Calibration - on startup or some specific (long) button press.
-Lane assignement from button presses. (4 quick presses to declare there are lanes, then presses to assign lanes  - 1 red thru 4 yellow)
-Bluetooth!
-Put the js in a file not in the code.py
-Another button and led integration - better feedback.
-Timing the sends and updates.
-Simplify the install.
+Remotely turn on debugging and save a debug log to the file system, rotate and erase it  
+Try a different/better js chart library and try to get it to scroll smoothly. Google is not open source and needs an Inet connection.  
+Test mode - where some known dataset is displayed.  
+Calibration - on startup or some specific (long) button press.  
+Lane assignement from button presses. (4 quick presses to declare there are lanes, then presses to assign lanes  - 1 red thru 4 yellow)  
+Bluetooth!  
+Put the js in a file not in the code.py  
+Another button and led integration - better feedback.  
+Timing the sends and updates.  
+Simplify the install.  
 
 ### Issues:
 
