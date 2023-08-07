@@ -37,17 +37,7 @@ The design is (simplistically): read from ADC, write to sink. Where the sink cou
    a ssd.
  - Both.
 
-Streaming data to a remote device seems "problematic". 
-
-The circuit python implementation of the http server does not support 
-websockets. This would be the best solution. It does look like it's available with micropython https://www.donskytech.com/using-websocket-in-micropython-a-practical-example/ 
-
-There is pub/subscribe service called MQTT - which looks like overkill.
-
-There is a micro python redis client https://micropython-redis.readthedocs.io/en/latest/ that might be an easy port 
-and could be useful - but it complicates the install by needing to install a Redis server, introduces latency
-and a shim for the browser to read from Redis - not the pi. It would provide a convenient cache solution.
-
+Data is streamed to the browser using server send events - a simple mechanism implemented in the Circuit Python web server.
 
 ## Device Specifics
 
@@ -93,19 +83,73 @@ So the code needs to look for hostname clashes and uniqueify its own name by suf
 With a network connection file(s) can be opened and the ADC inputs can be started, then the web server started to
 serve up the collected data.
 
+## Getting Running
+
+The Pi is running the latest release (8.2.0) of Circuit Python, which is a derivative of micro python. More about it here: https://docs.circuitpython.org/en/latest/docs/index.html
+
+With a modern version of Windows (>= 10) you should be able to simply plug the board into the computer using a USB cable and it'll magically appear as say the D: disk, and named CIRCUITPY - see https://learn.adafruit.com/welcome-to-circuitpython/the-circuitpy-drive
+
+Older Windows releases need drivers installed - read this: https://learn.adafruit.com/welcome-to-circuitpython/windows-7-and-8-1-drivers
+
+Use the Windows file manager to open the CIRCUITPY folder. In it you'll find two important files, namely:
+
+  - code.py  
+  - settings.toml  
+
+There are some directories too - such as lib and static - you can ignore these.
+
+Use an editor (such as Notepad++ https://notepad-plus-plus.org/downloads/) and make two changes to settings.toml. Comments in this file are preceded by a "#" - you'll see it contains the SSID and password for WiFi.
+
+More about it here: https://docs.circuitpython.org/projects/httpserver/en/latest/examples.html
+
+Look at your WIFi Access point and transcribe your SSID/password into the settings file, replacing the values I have set for my own network. These will need to be standardized for actual use.
+
+The file code.py is by convention run by Circuit Python which is installed as a boot loader/primitive operating system on the Pi and is what makes the Pi look like another Windows drive. Reinstalling the Circuit Python is done by holding the reset button on the Pi while plugging in the USB - don't do that :-)
+
+If you unplug the USB and plug it back in again the code will run and attempt to connect to your WiFi network, grab an IP address, and broadcast its name as "logger-red.local" to you home wifi network.
+
+It'll then wait for a connection from a browser. 
+
+Open a browser on another computer attached to Wifi - best if it's Chrome. In the command line type: logger-red.local
+
+With a bit of luck you'll see a simple web page - with a link on it, if you do not hit the link the page will redirect after 4 seconds to the same link namely: http://logger-red.local/client and should display a line chart which is continuously updated.
+
+If you want to see some logging info in the browser - hit F12 in the browser and look at the console - it should show some logging info.
+
+If the browser will not connect to the logger by name try the names "logger-whi.local" and "logger-red" and "logger-whi" (without the local suffix).
+
+If the browser can not find the logger by name you'll need to find it by IP address or use a Bonjour browser. 
+
+To find its IP address open a command prompt and run the arp command - read this: https://support.pelco.com/s/article/How-to-use-an-arp-table-to-fin-IP-addresses?language=en_US
+
+The arp -a command will list all the devices on you network by MAC and IP address - there will only be say three - the Pi, the WiFi AP and you computer. Type the most likely into the browser, e.g. http://192.168.178.89/client
+
+You can also try to find it using "Bonjour" Bonjour is a simple broadcast name service invented by Apple. You might have to install it from here: https://developer.apple.com/bonjour/ The Pi broadcasts its name on the WiFi network using this technology, and most WiFi Ap's have it installed.
+
+You can also connect to the Python console on the Pi (also called REPL) read this: https://learn.adafruit.com/welcome-to-circuitpython/advanced-serial-console-on-windows to see what it's doing.
+
+Once you have a TTY running and attached to the REPL, you'll see it prints out "DEBUG" statements to show what it's doing. You can kill and restart the code.py program by: ctl-C and ctl-D (that is hold the ctrl key down and press c or d) ctl-C kills the program, ctl-D tries a restart. It's rerunnable. You can also type various commands into the REPL when the code is halted to debug the code.
+
+The code is easy to understand: https://github.com/adrianblakey/slot-car-data-logger/blob/main/CIRCUITPY/code.py
+
+Basically:
+
+  - Sets up the WiFi connection https://github.com/adrianblakey/slot-car-data-logger/blob/main/CIRCUITPY/code.py#L133  
+  - Starts a Web server https://github.com/adrianblakey/slot-car-data-logger/blob/main/CIRCUITPY/code.py#L242  
+  - Runs an infinite loop https://github.com/adrianblakey/slot-car-data-logger/blob/main/CIRCUITPY/code.py#L679  
+  - Sends the ADC values to the browser https://github.com/adrianblakey/slot-car-data-logger/blob/main/CIRCUITPY/code.py#L221  
+  - Lots of magic done in the browser https://github.com/adrianblakey/slot-car-data-logger/blob/main/CIRCUITPY/code.py#L262  
+
 ### TODO:
 
-Lots  
-Saving files. Pain in the neck to remount the fs.  
-Re integrate the led classes and button - modularize the code  
-JS for plotting plot.ly say  
-Use the async_button class https://circuitpython-async-button.readthedocs.io/en/latest/  
-File system logging  
-Run calibration when enter the state.  
-Network names - fix   
-BT.  
-Better errors  
+Remotely turn on debugging and save a debug log to the file system, rotate and erase it  
+Try a different/better js chart library and try to get it to scroll smoothly. Google is not open source and needs an Inet connection.  
+Test mode - where some known dataset is displayed.  
+Calibration - on startup or some specific (long) button press.  
+Lane assignement from button presses. (4 quick presses to declare there are lanes, then presses to assign lanes  - 1 red thru 4 yellow)  
+Bluetooth!  
+Put the js in a file not in the code.py  
+Another button and led integration - better feedback.  
+Timing the sends and updates.  
+Simplify the install.  
 
-### Issues:
-
-How to stream data out.  
