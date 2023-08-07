@@ -6,8 +6,11 @@ Slot car data logger firmware.
 
 Channels:
 
-  GP18      - External LED, low = ON
-  GP22      - Push button
+  GP17      - External red LED, low ON
+  GP18      - External yellow LED, low = ON
+  GP16      - Push button black
+  GP21      - 4kHz piezo buzzer - 4kHz =- 200Hz
+  GP22      - Push button - yellow
   GP26/ADC0 - Current drawn by the motor through the hand controller
   GP27/ADC1 - Output voltage to track and motor from the hand controller
   GP28/ADC2 - Track incoming supply voltage
@@ -19,6 +22,7 @@ Write logs to local filesystem - web interface to pull them
 Flash the led
 
 """
+import math
 import os
 from time import monotonic, monotonic_ns, time, sleep
 
@@ -26,44 +30,67 @@ import socketpool
 import wifi
 import mdns
 import board
+import pulseio
+import pwmio
 import analogio
 import microcontroller
 import digitalio
-from adafruit_debouncer import Debouncer
+import array
+from adafruit_debouncer import Debouncer, Button
 
 from adafruit_httpserver import Server, Request, Response, FileResponse, MIMETypes, GET, JSONResponse, SSEResponse
 
 debug = True
-LANE_COLORS = ['red', 'whi', 'gre', 'ora', 'blu', 'yel', 'pur', 'bla']
+""" TODO Lane colors by track lanes, capture track lane count """
+LANE_COLORS_4 = ['red', 'white', 'blue', 'black']
+LANE_COLORS_5 = ['red', 'white', 'blue', 'yellow', 'black']
+LANE_COLORS_6 = ['red', 'white', 'green', 'blue', 'yellow', 'black']
+LANE_COLORS_7 = ['red', 'white', 'green', 'orange', 'blue', 'yellow', 'black']
+LANE_COLORS_8 = ['red', 'white', 'green', 'orange', 'blue', 'yellow', 'purple', 'black']
+LANE_COLORS = LANE_COLORS_4                  # default
+LANE_COUNT = 4                               # default
+
 ID = "Slot Car Data Logger V1.0"
 GIT = "https://github.com/adrianblakey/slot-car-data-logger"
 
-led = digitalio.DigitalInOut(board.GP18)
-led.direction = digitalio.Direction.OUTPUT
-led.value = True
-
+# Define a list of tones/music notes to play.
+TONE_FREQ = [ 262,   # C4
+              294,   # D4
+              330,   # E4
+              349,   # F4
+              392,   # G4
+              440,   # A4
+              494 ]  # B4
+red_led = digitalio.DigitalInOut(board.GP17)
+red_led.direction = digitalio.Direction.OUTPUT
+red_led.value = True
+yellow_led = digitalio.DigitalInOut(board.GP18)
+yellow_led.direction = digitalio.Direction.OUTPUT
+yellow_led.value = True
 board_led = digitalio.DigitalInOut(board.LED)
 board_led.direction = digitalio.Direction.OUTPUT
 board_led.value = False
 
-SF: float = 17.966 / 3.3
+ZERO_CURRENT: float = 1.65       # nominal zero, changes on calibration
+SF: float = 17.966 / 3.3         # const
 
-def flash_led(on_time: float) -> None:
-    led.value = False
+
+def flash_led(led: digitalio.DigitalInOut, on_time: float = 0.2, val: bool = False) -> None:
+    led.value = val
     sleep(on_time)
-    led.value = True
+    led.value = not val
 
 
-def led_on() -> None:
-    led.value = False
+def led_on(led: digitalio.DigitalInOut, val: bool = False) -> None:
+    led.value = val
 
 
-def led_off() -> None:
-    led.value = True
+def led_off(led: digitalio.DigitalInOut, val: bool = True) -> None:
+    led.value = val
 
 
 def scan_wifi_for(ssid: str) -> bool:
-    """Scans for a specific ssid"""
+    """ Scans for a specific ssid """
     rc = False
     for network in wifi.radio.start_scanning_networks():
         if debug:
@@ -90,9 +117,9 @@ def look_for_host(hostname: str) -> str:
                                                                                             port=80)  # port is required
         if debug:
             print("DEBUG - Found address:", ip)
-    except OSError as e:
+    except OSError as ex:
         if debug:
-            print("DEBUG - Hostname", hostname, "not found", str(e), type(e))
+            print("DEBUG - Hostname", hostname, "not found", str(ex), type(ex))
         rc = False
     return ip
 
@@ -106,8 +133,13 @@ def uniqueify_hostname(hostname: str) -> str:
     # Three chars to cover the 10 char hostname bug
     ip = look_for_host(hostname)
     if ip:  # found a match
-        if ip == wifi.radio.ipv4_address:  # If the IP address matches my hostname then reuse it
+        if str(ip) == str(wifi.radio.ipv4_address):  # If the IP address matches my hostname then reuse it
+            if debug:
+                print('DEBUG - ip:', ip, 'matches hostname:', hostname, 'return this hostname')
             return hostname
+        else:
+            if debug:
+                print('DEBUG - ip:', ip, 'does NOT match ip:', wifi.radio.ipv4_address, 'return for hostname', hostname)
         tokens = hostname.split("-")
         if len(tokens) > 1:
             color = tokens[1]
@@ -130,7 +162,7 @@ def uniqueify_hostname(hostname: str) -> str:
     return hostname
 
 
-def connect_to_wifi():
+def connect_to_wifi() -> (str, str):
     the_time = str(time())
     wifi.radio.hostname = str(the_time)  # Set a garbage hostname to run search for other hosts
     if debug:
@@ -149,12 +181,15 @@ def connect_to_wifi():
     try:
         wifi.radio.connect(str(ssid), str(password))
     except ConnectionError:
-        led_on()
+        led_on(red_led)
         if debug:
             print("DEBUG - Unable to connect with default credentials")
         raise RuntimeError('Bad WiFi password')
+    return ssid, password
 
-    hostname = uniqueify_hostname("logger-red")  # This name covers the 10 digit time string bug
+
+def connect_to_wifi_as_me(ssid: str, password: str):
+    hostname = uniqueify_hostname("logger-" + LANE_COLORS[MY_LANE])
     wifi.radio.stop_station()  # Discard temp connection
 
     if debug:
@@ -165,13 +200,14 @@ def connect_to_wifi():
     try:
         wifi.radio.connect(str(ssid), str(password))
     except ConnectionError as e:
+        led_on(red_led)
         if debug:
             print("DEBUG - Unable to connect with default credentials", str(e))
-        # TODO flash the red led
-        # TODO wait/retry from the start after waiting for the network to be set up, note code will reload on its own
+        raise RuntimeError('Unable to connect to WiFi with:', ssid, password)
 
 
 def advertise_service():
+    """ Advertise the service to mdns """
     try:
         if debug:
             print("DEBUG - MDNS advertisement")
@@ -182,6 +218,79 @@ def advertise_service():
     except RuntimeError as e:
         if debug:
             print("DEBUG - MDNS setting failed:", str(e))
+
+
+def calibrate_current():
+    """ Measure the current 10 times and average """
+    with analogio.AnalogIn(board.GP26) as cI:
+        i = 0
+        count: float = 0.0
+        while i < 10:
+            count += (cI.value * 3.3) / 65536
+            i += 1
+        global ZERO_CURRENT
+        ZERO_CURRENT = count / 10
+
+
+def scale(input_signal: float) -> float:
+    """ Scale the current """
+    if debug:
+        print("DEBUG - input signal:", str(input_signal))
+    return (input_signal - ZERO_CURRENT) / .025          # ~1.65 = 0 point, .025 = 1 amp
+
+
+def prompt_for_input():
+    """ Plays the tones to prompt for input - lame """
+    with pwmio.PWMOut(board.GP21, duty_cycle=2 ** 15, frequency=TONE_FREQ[0], variable_frequency=True) as tone:
+        for j in range(len(TONE_FREQ)):
+            tone.frequency = TONE_FREQ[j]
+            sleep(.1)
+
+
+def beep(freq: int = TONE_FREQ[0], duration: float = 0.2):
+    with pwmio.PWMOut(board.GP21, duty_cycle=2 ** 15, frequency=freq, variable_frequency=True) as tone:
+        sleep(duration)
+
+
+def input_number(minimum: int = 4, maximum: int = 8) -> int:
+    """ Press button down to increment, long (>1 sec) to leave"""
+    with digitalio.DigitalInOut(board.GP22) as b_pin:
+        b_pin.direction = digitalio.Direction.INPUT
+        b_pin.pull = digitalio.Pull.UP
+        yellow_debouncer = Debouncer(b_pin)
+        the_number = 0
+        while True:
+            yellow_debouncer.update()
+            if yellow_debouncer.fell:
+                start = monotonic()
+                if debug:
+                    print('DEBUG - button pressed', str(start))
+                the_number += 1
+                if the_number > maximum:           # Reset to 1
+                    flash_led(red_led)
+                    beep(duration=.1, freq=TONE_FREQ[1])   # Error can't leave, keep going ...
+                    the_number = 1
+                if debug:
+                    print('DEBUG - count:', the_number)
+            elif yellow_debouncer.rose:
+                elapse = monotonic() - start
+                if debug:
+                    print('DEBUG - button released, duration:', str(yellow_debouncer.current_duration), str(elapse))
+                if elapse <= .4:    # Short press < .4 sec, good count
+                    beep()
+                else:               # Long press, decrement the count and leave only if > min
+                    the_number -= 1
+                    if debug:
+                        print("DEBUG - long press leave with the number if it's big enough", the_number, minimum)
+                    if the_number >= minimum:
+                        [beep(duration=.4, freq=TONE_FREQ[4]) for _ in range(the_number)]  # confirm with beeps
+                        return the_number
+                    else:
+                        times = minimum - the_number
+                        [flash_led(red_led) for _ in range(times)]
+                        [beep(duration=.1, freq=TONE_FREQ[1]) for _ in range(times)] # Error can't leave, keep going ...
+            else:
+                pass
 
 
 class ConnectedClient:
@@ -208,7 +317,8 @@ class ConnectedClient:
 
     @property
     def ready(self):
-        return self._response and self._next_message < monotonic() + 1
+        # print("DEBUG - ready ", str(monotonic()), str(monotonic_ns()))
+        return self._response and self._next_message < monotonic()
 
     @property
     def collected(self):
@@ -226,23 +336,64 @@ class ConnectedClient:
         with analogio.AnalogIn(board.GP26) as cI, \
                 analogio.AnalogIn(board.GP27) as cV, \
                 analogio.AnalogIn(board.GP28) as tV:
-            # TODO add/subtract the zero calibration value
             # Track voltage, controller voltage, controller current
             self._response.send_event(
-                f"{monotonic_ns()},{((tV.value * 3.3) / 65536) * SF},{((cV.value * 3.3) / 65536) * SF},{(cI.value * 3.3) / 65536},{mark}")
-        self._next_message = monotonic() + 1
+                f"{monotonic_ns()},{((tV.value * 3.3) / 65536) * SF},{((cV.value * 3.3) / 65536) * SF},{scale((cI.value * 3.3) / 65536)},{mark}")
+        print("DEBUG - send_message ", str(monotonic()), str(monotonic_ns()))
+        self._next_message = monotonic() + .2
         board_led.value = not board_led.value
 
 
-flash_led(0.5)
-connect_to_wifi()
+print()
+
+# Startup flash
+i = 0
+while i < 2:
+    i += 1
+    flash_led(red_led, 0.1)                               # Notify we are powered up
+    flash_led(yellow_led, 0.1)
+
+led_on(board_led, True)            # Flashes if not set - turn it off if there is an error
+if debug:
+    print("DEBUG - Calibrate current")
+calibrate_current()
+flash_led(yellow_led)
+ssid, password = connect_to_wifi()                      # Do it here - we might be able to get config details ...
+flash_led(yellow_led)
+if debug:
+    print("DEBUG - Send pulses")
+prompt_for_input()
+if debug:
+    print("DEBUG - number of lanes")
+LANE_COUNT = input_number()              # Total number of lanes
+flash_led(yellow_led)
+if LANE_COUNT == 4:
+    LANE_COLORS = LANE_COLORS_4
+elif LANE_COUNT == 5:
+    LANE_COLORS = LANE_COLORS_5
+elif LANE_COUNT == 6:
+    LANE_COLORS = LANE_COLORS_6
+elif LANE_COUNT == 7:
+    LANE_COLORS = LANE_COLORS_7
+elif LANE_COUNT == 8:
+    LANE_COLORS = LANE_COLORS_8
+prompt_for_input()
+if debug:
+    print("DEBUG - my lane of:", LANE_COUNT)
+MY_LANE = input_number(minimum=1, maximum=LANE_COUNT)       # My lane number red = 1 ...
+flash_led(yellow_led)
+connect_to_wifi_as_me(ssid, password)
+flash_led(yellow_led)
 pool = socketpool.SocketPool(wifi.radio)
 server = Server(pool, debug=debug, root_path='/static')
+if debug:
+    print("DEBUG - advertise service")
 advertise_service()
+if debug:
+    print("DEBUG - start server")
 server.start(str(wifi.radio.ipv4_address))
-
+[flash_led(yellow_led) for _ in range(5)]
 connected_client = ConnectedClient()
-
 
 @server.route("/cpu-information", append_slash=True)
 def cpu_information_handler(request: Request):
@@ -320,7 +471,6 @@ HTML_TEMPLATE = """
                 data.addColumn('number', 'Controller Voltage');
                 data.addColumn('number', 'Controller Current');
 
-   
                 var materialOptions = {
                     title: 'Data Logger',
                     titlePosition: 'out',
@@ -330,7 +480,6 @@ HTML_TEMPLATE = """
                     height: 600,
                     hAxis: {
                         gridlines: {color: 'grey', minSpacing: 40, multiple: 1, interval: [1], count: 10},
-                        minorGridlines: {color: 'violet', interval: [1]},
                         baseLine: 0, 
                         title: 'Elapse (sec)', 
                         textStyle: {color: 'black', bold: true},
@@ -501,7 +650,7 @@ HTML_TEMPLATE = """
                     xVal = parseInt(tok[0]);                  // elapse time as an int
                     rowCount = data.getNumberOfRows();
                     if (rowCount == 0) {  // before we add anything, save the first e time
-                        console.log('First firstElapseTime is:', tok[0]);
+                        // console.log('First firstElapseTime is:', tok[0]);
                         firstElapseTime = xVal;
                     }
                     // Handle the mark - only save data between marks?
@@ -530,25 +679,26 @@ HTML_TEMPLATE = """
                             addData(tok[0], tok[1], tok[2], tok[3]);
                         }
                     }
-                    console.log('Add row to chart');
+                    // console.log('Add row to chart');
                     eTime = (xVal - firstElapseTime) / 1000000000; // scale it to n.xxxxx seconds
                     if (eTime < 0.0) {    // The clock reset so reestablish the zero
                         firstElapseTime = xVal;
                         eTime = 0.0;
                     }
-                    console.log('Normalized etime', eTime);
+                    // console.log('Normalized etime', eTime);
                     data.addRow([parseFloat(eTime),parseFloat(tok[1]),parseFloat(tok[2]),parseFloat(tok[3])]);
 
                     // console.log('Max, min, etime', materialOptions.hAxis.viewWindow.max, materialOptions.hAxis.viewWindow.min, eTime);
                     latestX = Math.ceil(eTime);  // Round up
-                    console.log('if eTime ceil is bigger than max, move vw', latestX, materialOptions.hAxis.viewWindow.min, materialOptions.hAxis.viewWindow.max);
+                    // console.log('if eTime ceil is bigger than max, move vw', latestX, materialOptions.hAxis.viewWindow.min, materialOptions.hAxis.viewWindow.max);
                     if (latestX >= materialOptions.hAxis.viewWindow.max) {       // step the vw forward in front of the value
                         materialOptions.hAxis.viewWindow.max++;
                         materialOptions.hAxis.viewWindow.min++;
-                        console.log('Min, max, rowct', materialOptions.hAxis.viewWindow.min, materialOptions.hAxis.viewWindow.max, data.getNumberOfRows());
+                        // console.log('Min, max, rowct', materialOptions.hAxis.viewWindow.min, materialOptions.hAxis.viewWindow.max, data.getNumberOfRows());
                         data.removeRows(0, Math.floor(rowCount / 10) - 1);           // garbage collect
                     }
                     // console.log("draw", materialOptions);
+                    console.log("chart draw", performance.now());
                     chart.draw(data, google.charts.Line.convertOptions(materialOptions));
                 }
                 function displayData() {
