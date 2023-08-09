@@ -9,36 +9,32 @@ Channels:
   GP17      - External red LED, low ON
   GP18      - External yellow LED, low = ON
   GP16      - Push button black
-  GP21      - 4kHz piezo buzzer - 4kHz =- 200Hz
+  GP21      - Piezo
   GP22      - Push button - yellow
   GP26/ADC0 - Current drawn by the motor through the hand controller
   GP27/ADC1 - Output voltage to track and motor from the hand controller
   GP28/ADC2 - Track incoming supply voltage
 
 TODO
-Button press
-Logging
-Write logs to local filesystem - web interface to pull them
-Flash the led
-
+Configure from a track server to an http query
+Javascript in a file
+Use a different/better chart lib
+Async io for the input
 """
-import math
+
 import os
 from time import monotonic, monotonic_ns, time, sleep
-
 import socketpool
 import wifi
 import mdns
 import board
-import pulseio
 import pwmio
 import analogio
 import microcontroller
 import digitalio
-import array
-from adafruit_debouncer import Debouncer, Button
-
+from adafruit_debouncer import Debouncer
 from adafruit_httpserver import Server, Request, Response, FileResponse, MIMETypes, GET, JSONResponse, SSEResponse
+import tune
 
 debug = True
 """ TODO Lane colors by track lanes, capture track lane count """
@@ -53,14 +49,7 @@ LANE_COUNT = 4                               # default
 ID = "Slot Car Data Logger V1.0"
 GIT = "https://github.com/adrianblakey/slot-car-data-logger"
 
-# Define a list of tones/music notes to play.
-TONE_FREQ = [ 262,   # C4
-              294,   # D4
-              330,   # E4
-              349,   # F4
-              392,   # G4
-              440,   # A4
-              494 ]  # B4
+
 red_led = digitalio.DigitalInOut(board.GP17)
 red_led.direction = digitalio.Direction.OUTPUT
 red_led.value = True
@@ -239,27 +228,20 @@ def scale(input_signal: float) -> float:
     return (input_signal - ZERO_CURRENT) / .025          # ~1.65 = 0 point, .025 = 1 amp
 
 
-def prompt_for_input():
-    """ Plays the tones to prompt for input - lame """
-    with pwmio.PWMOut(board.GP21, duty_cycle=2 ** 15, frequency=TONE_FREQ[0], variable_frequency=True) as tone:
-        for j in range(len(TONE_FREQ)):
-            tone.frequency = TONE_FREQ[j]
-            sleep(.1)
-
-
-def beep(freq: int = TONE_FREQ[0], duration: float = 0.2):
-    with pwmio.PWMOut(board.GP21, duty_cycle=2 ** 15, frequency=freq, variable_frequency=True) as tone:
-        sleep(duration)
-
-
 def input_number(minimum: int = 4, maximum: int = 8) -> int:
     """ Press button down to increment, long (>1 sec) to leave"""
+    tune.INPUT_PROMPT.play()
     with digitalio.DigitalInOut(board.GP22) as b_pin:
         b_pin.direction = digitalio.Direction.INPUT
         b_pin.pull = digitalio.Pull.UP
         yellow_debouncer = Debouncer(b_pin)
         the_number = 0
+        tick = 0
         while True:
+            tick += 1
+            if tick == 50000:
+                tune.REMINDER.play()
+                tick = 0
             yellow_debouncer.update()
             if yellow_debouncer.fell:
                 start = monotonic()
@@ -268,7 +250,7 @@ def input_number(minimum: int = 4, maximum: int = 8) -> int:
                 the_number += 1
                 if the_number > maximum:           # Reset to 1
                     flash_led(red_led)
-                    beep(duration=.1, freq=TONE_FREQ[1])   # Error can't leave, keep going ...
+                    tune.LO_HI.play()
                     the_number = 1
                 if debug:
                     print('DEBUG - count:', the_number)
@@ -277,18 +259,39 @@ def input_number(minimum: int = 4, maximum: int = 8) -> int:
                 if debug:
                     print('DEBUG - button released, duration:', str(yellow_debouncer.current_duration), str(elapse))
                 if elapse <= .4:    # Short press < .4 sec, good count
-                    beep()
+                    tune.INPUT.play()
+                    flash_led(yellow_led)
                 else:               # Long press, decrement the count and leave only if > min
                     the_number -= 1
                     if debug:
                         print("DEBUG - long press leave with the number if it's big enough", the_number, minimum)
                     if the_number >= minimum:
-                        [beep(duration=.4, freq=TONE_FREQ[4]) for _ in range(the_number)]  # confirm with beeps
+                        [tune.FEEDBACK.play() for _ in range(the_number)]  # confirm with beeps
+                        flash_led(yellow_led)
                         return the_number
                     else:
                         times = minimum - the_number
-                        [flash_led(red_led) for _ in range(times)]
-                        [beep(duration=.1, freq=TONE_FREQ[1]) for _ in range(times)] # Error can't leave, keep going ...
+                        flash_led(red_led)
+                        tune.HI_LO.play()
+            else:
+                pass
+
+
+def nav() -> bool:
+    """ Navigate using black button 2"""
+    tune.INPUT_PROMPT.play()
+    with digitalio.DigitalInOut(board.GP16) as nav:
+        nav.direction = digitalio.Direction.INPUT
+        nav.pull = digitalio.Pull.UP
+        black_debouncer = Debouncer(nav)
+        tick = 0
+        while True:
+            black_debouncer.update()
+            tick += 1
+            if tick == 20000:
+                return False
+            if black_debouncer.fell:
+                return True
             else:
                 pass
 
@@ -344,43 +347,48 @@ class ConnectedClient:
         board_led.value = not board_led.value
 
 
-print()
+def start_up() -> (str, str):
+    print()
+    tune.START_UP.play()
 
-# Startup flash
-i = 0
-while i < 2:
-    i += 1
-    flash_led(red_led, 0.1)                               # Notify we are powered up
-    flash_led(yellow_led, 0.1)
+    # Startup flash
+    i = 0
+    while i < 2:
+        i += 1
+        flash_led(red_led, 0.1)                               # Notify we are powered up
+        flash_led(yellow_led, 0.1)
 
-led_on(board_led, True)            # Flashes if not set - turn it off if there is an error
-if debug:
-    print("DEBUG - Calibrate current")
-calibrate_current()
-flash_led(yellow_led)
-ssid, password = connect_to_wifi()                      # Do it here - we might be able to get config details ...
-flash_led(yellow_led)
-if debug:
-    print("DEBUG - Send pulses")
-prompt_for_input()
-if debug:
-    print("DEBUG - number of lanes")
-LANE_COUNT = input_number()              # Total number of lanes
-flash_led(yellow_led)
-if LANE_COUNT == 4:
-    LANE_COLORS = LANE_COLORS_4
-elif LANE_COUNT == 5:
-    LANE_COLORS = LANE_COLORS_5
-elif LANE_COUNT == 6:
-    LANE_COLORS = LANE_COLORS_6
-elif LANE_COUNT == 7:
-    LANE_COLORS = LANE_COLORS_7
-elif LANE_COUNT == 8:
-    LANE_COLORS = LANE_COLORS_8
-prompt_for_input()
-if debug:
-    print("DEBUG - my lane of:", LANE_COUNT)
-MY_LANE = input_number(minimum=1, maximum=LANE_COUNT)       # My lane number red = 1 ...
+    led_on(board_led, True)            # Flashes if not set - turn it off if there is an error
+    if debug:
+        print("DEBUG - Calibrate current")
+    calibrate_current()
+    flash_led(yellow_led)
+    ssid, password = connect_to_wifi()                      # Do it here - we might be able to get config details ...
+    flash_led(yellow_led)
+    return ssid, password
+
+
+ssid, password = start_up()
+
+while True:
+    LANE_COUNT = input_number()              # Total number of lanes
+    flash_led(yellow_led)
+    if LANE_COUNT == 4:
+        LANE_COLORS = LANE_COLORS_4
+    elif LANE_COUNT == 5:
+        LANE_COLORS = LANE_COLORS_5
+    elif LANE_COUNT == 6:
+        LANE_COLORS = LANE_COLORS_6
+    elif LANE_COUNT == 7:
+        LANE_COLORS = LANE_COLORS_7
+    elif LANE_COUNT == 8:
+        LANE_COLORS = LANE_COLORS_8
+    if debug:
+        print("DEBUG - my lane of:", LANE_COUNT)
+    MY_LANE = input_number(minimum=1, maximum=LANE_COUNT)       # My lane number red = 1 ...
+    if not nav():
+        break
+
 flash_led(yellow_led)
 connect_to_wifi_as_me(ssid, password)
 flash_led(yellow_led)
@@ -394,6 +402,7 @@ if debug:
 server.start(str(wifi.radio.ipv4_address))
 [flash_led(yellow_led) for _ in range(5)]
 connected_client = ConnectedClient()
+
 
 @server.route("/cpu-information", append_slash=True)
 def cpu_information_handler(request: Request):
@@ -843,8 +852,10 @@ try:
 except Exception as e:
     print("Error:\n", str(e))
     print("Resetting mcu in 10 seconds")
-    led_on()
-    time.sleep(10)
+    tune.REBOOT.play()
+    led_on(red_led)
+    led_on(yellow_led)
+    time.sleep(5)
     microcontroller.reset()
 
 
