@@ -4,39 +4,91 @@
 
 Slot car data logger firmware.
 
+Channels:
+
+  GP17      - External red LED, low ON
+  GP18      - External yellow LED, low = ON
+  GP16      - Push button black
+  GP21      - Piezo
+  GP22      - Push button - yellow
+  GP26/ADC0 - Current drawn by the motor through the hand controller
+  GP27/ADC1 - Output voltage to track and motor from the hand controller
+  GP28/ADC2 - Track incoming supply voltage
+
 TODO
-Button press
-Logging
-Write logs to local filesystem - web interface to pull them
-Flash the led
-
+Configure from a track server to an http query
+Javascript in a file
+Use a different/better chart lib
+Async io for the input
 """
-import os
-from time import monotonic, monotonic_ns, time
 
+import os
+from time import monotonic, monotonic_ns, time, sleep
 import socketpool
 import wifi
 import mdns
 import board
+import pwmio
 import analogio
 import microcontroller
 import digitalio
 from adafruit_debouncer import Debouncer
-
 from adafruit_httpserver import Server, Request, Response, FileResponse, MIMETypes, GET, JSONResponse, SSEResponse
+import tune
 
 debug = True
-LANE_COLORS = ['bla', 'pur', 'yel', 'blu', 'ora', 'gre', 'whi', 'red']
+""" TODO Lane colors by track lanes, capture track lane count """
+LANE_COLORS_4 = ['red', 'white', 'blue', 'black']
+LANE_COLORS_5 = ['red', 'white', 'blue', 'yellow', 'black']
+LANE_COLORS_6 = ['red', 'white', 'green', 'blue', 'yellow', 'black']
+LANE_COLORS_7 = ['red', 'white', 'green', 'orange', 'blue', 'yellow', 'black']
+LANE_COLORS_8 = ['red', 'white', 'green', 'orange', 'blue', 'yellow', 'purple', 'black']
+LANE_COLORS = LANE_COLORS_4                  # default
+LANE_COUNT = 4                               # default
+
+ID = "Slot Car Data Logger V1.0"
+GIT = "https://github.com/adrianblakey/slot-car-data-logger"
+
+
+red_led = digitalio.DigitalInOut(board.GP17)
+red_led.direction = digitalio.Direction.OUTPUT
+red_led.value = True
+yellow_led = digitalio.DigitalInOut(board.GP18)
+yellow_led.direction = digitalio.Direction.OUTPUT
+yellow_led.value = True
+board_led = digitalio.DigitalInOut(board.LED)
+board_led.direction = digitalio.Direction.OUTPUT
+board_led.value = False
+
+ZERO_CURRENT: float = 1.65       # nominal zero, changes on calibration
+SF: float = 17.966 / 3.3         # const
+
+
+def flash_led(led: digitalio.DigitalInOut, on_time: float = 0.2, val: bool = False) -> None:
+    led.value = val
+    sleep(on_time)
+    led.value = not val
+
+
+def led_on(led: digitalio.DigitalInOut, val: bool = False) -> None:
+    led.value = val
+
+
+def led_off(led: digitalio.DigitalInOut, val: bool = True) -> None:
+    led.value = val
 
 
 def scan_wifi_for(ssid: str) -> bool:
-    """Scans for a specific ssid"""
+    """ Scans for a specific ssid """
     rc = False
     for network in wifi.radio.start_scanning_networks():
+        if debug:
+            print("DEBUG - %s\tRSSI: %d\tChannel: %d" % (
+                str(network.ssid, "utf-8"), network.rssi, network.channel))
         if network.ssid == ssid:
             if debug:
-                print("Found matching WiFi network:\t%s\tRSSI: %d\tChannel: %d" % (
-                str(network.ssid, "utf-8"), network.rssi, network.channel))
+                print("DEBUG - Found matching WiFi network:\t%s\tRSSI: %d\tChannel: %d" % (
+                    str(network.ssid, "utf-8"), network.rssi, network.channel))
             rc = True
             break
     wifi.radio.stop_scanning_networks()
@@ -47,16 +99,16 @@ def look_for_host(hostname: str) -> str:
     """Search for a specific hostname on the network"""
     ip = None
     if debug:
-        print("Looking for hostname:", hostname)
+        print("DEBUG - Looking for hostname:", hostname)
     temp_pool = socketpool.SocketPool(wifi.radio)
     try:
         [(family, socket_type, socket_protocol, flags, (ip, port))] = temp_pool.getaddrinfo(host=hostname,
                                                                                             port=80)  # port is required
         if debug:
-            print("Found address:", ip)
-    except OSError as e:
+            print("DEBUG - Found address:", ip)
+    except OSError as ex:
         if debug:
-            print("Hostname", hostname, "not found", str(e), type(e))
+            print("DEBUG - Hostname", hostname, "not found", str(ex), type(ex))
         rc = False
     return ip
 
@@ -65,21 +117,26 @@ def uniqueify_hostname(hostname: str) -> str:
     """Looks for the hostname on the network. If found tries suffixes until it finds
     one free that it can use"""
     if debug:
-        print('uniqueify_hostname()', hostname)
+        print('DEBUG - uniqueify_hostname()', hostname)
     # TODO recurses forever if all colors used up!
     # Three chars to cover the 10 char hostname bug
     ip = look_for_host(hostname)
     if ip:  # found a match
-        if ip == wifi.radio.ipv4_address:  # If the IP address matches my hostname then reuse it
+        if str(ip) == str(wifi.radio.ipv4_address):  # If the IP address matches my hostname then reuse it
+            if debug:
+                print('DEBUG - ip:', ip, 'matches hostname:', hostname, 'return this hostname')
             return hostname
+        else:
+            if debug:
+                print('DEBUG - ip:', ip, 'does NOT match ip:', wifi.radio.ipv4_address, 'return for hostname', hostname)
         tokens = hostname.split("-")
         if len(tokens) > 1:
             color = tokens[1]
             if debug:
-                print("Color suffix", color)
+                print("DEBUG - Color suffix", color)
             for i, lane_color in enumerate(LANE_COLORS):  # Find the next color
                 if debug:
-                    print("lane color", lane_color)
+                    print("DEBUG - lane color", lane_color)
                 if color == lane_color:  # Match my current color - which is taken
                     if i == len(LANE_COLORS) - 1:  # Last one match - so it resets
                         i = -1
@@ -94,66 +151,149 @@ def uniqueify_hostname(hostname: str) -> str:
     return hostname
 
 
-def connect_to_wifi():
+def connect_to_wifi() -> (str, str):
     the_time = str(time())
     wifi.radio.hostname = str(the_time)  # Set a garbage hostname to run search for other hosts
     if debug:
-        print("Temp Hostname for scanning:", wifi.radio.hostname)
-    # use my ip to find existing hostname
-
+        print("DEBUG - Temp Hostname for scanning:", wifi.radio.hostname)
     ssid = os.getenv("CIRCUITPY_WIFI_SSID")  # We'll use a conventional SSID, say slot-car-logger
     if not scan_wifi_for(ssid):
-        # TODO flash the led to say we can't find a SSID
+        led_on()
         if debug:
-            print("Unable to find default network ssid: ", ssid)
+            print("DEBUG - Unable to find default network ssid:", ssid)
+        raise RuntimeError('No such ssid ' + ssid)
     else:
         if debug:
-            print("Success: network", ssid, "found, connecting with default credentials.")
+            print("DEBUG - Success: network", ssid, "found, connecting with default credentials.")
 
     password = os.getenv("CIRCUITPY_WIFI_PASSWORD")  # We'll use a conventional password too, say sl0tc1r
     try:
         wifi.radio.connect(str(ssid), str(password))
     except ConnectionError:
+        led_on(red_led)
         if debug:
-            print("Unable to connect with default credentials")
-        # TODO flash the red led
-        # TODO wait/retry some time say for the network to be set up, note code will reload on its own
+            print("DEBUG - Unable to connect with default credentials")
+        raise RuntimeError('Bad WiFi password')
+    return ssid, password
 
-    # Look for this host on the network, use it if not found
-    hostname = uniqueify_hostname("logger-bla")  # This name covers the 10 digit time string
 
+def connect_to_wifi_as_me(ssid: str, password: str):
+    hostname = uniqueify_hostname("logger-" + LANE_COLORS[MY_LANE])
     wifi.radio.stop_station()  # Discard temp connection
 
     if debug:
-        print("Wifi connection:", wifi.radio.connected)
-        print("Setting hostname to", hostname, "before reconnecting")
+        print("DEBUG - Wifi connection:", wifi.radio.connected)
+        print("DEBUG - Setting hostname to", hostname, "before reconnecting")
 
     wifi.radio.hostname = str(hostname)
     try:
         wifi.radio.connect(str(ssid), str(password))
     except ConnectionError as e:
+        led_on(red_led)
         if debug:
-            print("Unable to connect with default credentials", str(e))
-        # TODO flash the red led
-        # TODO wait/retry from the start after waiting for the network to be set up, note code will reload on its own
+            print("DEBUG - Unable to connect with default credentials", str(e))
+        raise RuntimeError('Unable to connect to WiFi with:', ssid, password)
 
 
 def advertise_service():
+    """ Advertise the service to mdns """
     try:
         if debug:
-            print("MDNS advertisement")
+            print("DEBUG - MDNS advertisement")
         mdns_server = mdns.Server(wifi.radio)
         mdns_server.hostname = wifi.radio.hostname
-        mdns_server.advertise_service(service_type="_http", protocol="_tcp", port=80)
+        mdns_server.instance_name = 'Slot car data logger'
+    #    mdns_server.advertise_service(service_type="_http", protocol="_tcp", port=80)
     except RuntimeError as e:
         if debug:
-            print("MDNS setting failed:", str(e))
+            print("DEBUG - MDNS setting failed:", str(e))
 
 
-connect_to_wifi()
-pool = socketpool.SocketPool(wifi.radio)
-server = Server(pool, debug=True, root_path='/static')
-advertise_service()
+def calibrate_current():
+    """ Measure the current 10 times and average """
+    with analogio.AnalogIn(board.GP26) as cI:
+        i = 0
+        count: float = 0.0
+        while i < 10:
+            count += (cI.value * 3.3) / 65536
+            i += 1
+        global ZERO_CURRENT
+        ZERO_CURRENT = count / 10
+
+
+def scale(input_signal: float) -> float:
+    """ Scale the current """
+    if debug:
+        print("DEBUG - input signal:", str(input_signal))
+    return (input_signal - ZERO_CURRENT) / .025          # ~1.65 = 0 point, .025 = 1 amp
+
+
+def input_number(minimum: int = 4, maximum: int = 8) -> int:
+    """ Press button down to increment, long (>1 sec) to leave"""
+    tune.INPUT_PROMPT.play()
+    with digitalio.DigitalInOut(board.GP22) as b_pin:
+        b_pin.direction = digitalio.Direction.INPUT
+        b_pin.pull = digitalio.Pull.UP
+        yellow_debouncer = Debouncer(b_pin)
+        the_number = 0
+        tick = 0
+        while True:
+            tick += 1
+            if tick == 50000:
+                tune.REMINDER.play()
+                tick = 0
+            yellow_debouncer.update()
+            if yellow_debouncer.fell:
+                start = monotonic()
+                if debug:
+                    print('DEBUG - button pressed', str(start))
+                the_number += 1
+                if the_number > maximum:           # Reset to 1
+                    flash_led(red_led)
+                    tune.LO_HI.play()
+                    the_number = 1
+                if debug:
+                    print('DEBUG - count:', the_number)
+            elif yellow_debouncer.rose:
+                elapse = monotonic() - start
+                if debug:
+                    print('DEBUG - button released, duration:', str(yellow_debouncer.current_duration), str(elapse))
+                if elapse <= .4:    # Short press < .4 sec, good count
+                    tune.INPUT.play()
+                    flash_led(yellow_led)
+                else:               # Long press, decrement the count and leave only if > min
+                    the_number -= 1
+                    if debug:
+                        print("DEBUG - long press leave with the number if it's big enough", the_number, minimum)
+                    if the_number >= minimum:
+                        [tune.FEEDBACK.play() for _ in range(the_number)]  # confirm with beeps
+                        flash_led(yellow_led)
+                        return the_number
+                    else:
+                        times = minimum - the_number
+                        flash_led(red_led)
+                        tune.HI_LO.play()
+            else:
+                pass
+
+
+def nav() -> bool:
+    """ Navigate using black button 2"""
+    tune.INPUT_PROMPT.play()
+    with digitalio.DigitalInOut(board.GP16) as nav:
+        nav.direction = digitalio.Direction.INPUT
+        nav.pull = digitalio.Pull.UP
+        black_debouncer = Debouncer(nav)
+        tick = 0
+        while True:
+            black_debouncer.update()
+            tick += 1
+            if tick == 20000:
+                return False
+            if black_debouncer.fell:
+                return True
+            else:
+                pass
 
 
 class ConnectedClient:
@@ -180,7 +320,8 @@ class ConnectedClient:
 
     @property
     def ready(self):
-        return self._response and self._next_message < monotonic() + 1
+        # print("DEBUG - ready ", str(monotonic()), str(monotonic_ns()))
+        return self._response and self._next_message < monotonic()
 
     @property
     def collected(self):
@@ -198,10 +339,69 @@ class ConnectedClient:
         with analogio.AnalogIn(board.GP26) as cI, \
                 analogio.AnalogIn(board.GP27) as cV, \
                 analogio.AnalogIn(board.GP28) as tV:
-            # TODO add/subtract the zero calibration value
+            # Track voltage, controller voltage, controller current
             self._response.send_event(
-                f"{monotonic_ns()},{(cI.value * 3.3) / 65536},{(cV.value * 3.3) / 65536},{(tV.value * 3.3) / 65536},{mark}")
-        self._next_message = monotonic() + 1
+                f"{monotonic_ns()},{((tV.value * 3.3) / 65536) * SF},{((cV.value * 3.3) / 65536) * SF},{scale((cI.value * 3.3) / 65536)},{mark}")
+        print("DEBUG - send_message ", str(monotonic()), str(monotonic_ns()))
+        self._next_message = monotonic() + .2
+        board_led.value = not board_led.value
+
+
+def start_up() -> (str, str):
+    print()
+    tune.START_UP.play()
+
+    # Startup flash
+    i = 0
+    while i < 2:
+        i += 1
+        flash_led(red_led, 0.1)                               # Notify we are powered up
+        flash_led(yellow_led, 0.1)
+
+    led_on(board_led, True)            # Flashes if not set - turn it off if there is an error
+    if debug:
+        print("DEBUG - Calibrate current")
+    calibrate_current()
+    flash_led(yellow_led)
+    ssid, password = connect_to_wifi()                      # Do it here - we might be able to get config details ...
+    flash_led(yellow_led)
+    return ssid, password
+
+
+ssid, password = start_up()
+
+while True:
+    LANE_COUNT = input_number()              # Total number of lanes
+    flash_led(yellow_led)
+    if LANE_COUNT == 4:
+        LANE_COLORS = LANE_COLORS_4
+    elif LANE_COUNT == 5:
+        LANE_COLORS = LANE_COLORS_5
+    elif LANE_COUNT == 6:
+        LANE_COLORS = LANE_COLORS_6
+    elif LANE_COUNT == 7:
+        LANE_COLORS = LANE_COLORS_7
+    elif LANE_COUNT == 8:
+        LANE_COLORS = LANE_COLORS_8
+    if debug:
+        print("DEBUG - my lane of:", LANE_COUNT)
+    MY_LANE = input_number(minimum=1, maximum=LANE_COUNT)       # My lane number red = 1 ...
+    if not nav():
+        break
+
+flash_led(yellow_led)
+connect_to_wifi_as_me(ssid, password)
+flash_led(yellow_led)
+pool = socketpool.SocketPool(wifi.radio)
+server = Server(pool, debug=debug, root_path='/static')
+if debug:
+    print("DEBUG - advertise service")
+advertise_service()
+if debug:
+    print("DEBUG - start server")
+server.start(str(wifi.radio.ipv4_address))
+[flash_led(yellow_led) for _ in range(5)]
+connected_client = ConnectedClient()
 
 
 @server.route("/cpu-information", append_slash=True)
@@ -219,46 +419,69 @@ def cpu_information_handler(request: Request):
     return JSONResponse(request, cpu_data)
 
 
-connected_client = ConnectedClient()
-os_name = str(time())
 HTML_TEMPLATE = """
 <html lang="en">
     <head>
         <style>
         chart_wrap {
-        position: relative;
-        padding-bottom: 100%;
-        height: 0;
-        overflow:hidden;
+            position: relative;
+            padding-bottom: 100%;
+            height: 0;
+            overflow:hidden;
         }
 
         linechart_material {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width:100%;
-        height:500px;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width:100%;
+            height:600px;
         }
+        
         </style>
         <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+        <script type="text/javascript" src="js/test.js"></script>
         <script type="text/javascript">
             google.charts.load('current', {'packages':['line']});
             google.charts.setOnLoadCallback(init);
-
+            test();
             let db;
+            let INDEXED_DB_SUPPORTED = false;
+            let graphDb;
             const DB_NAME = 'logger_db_';
+            let db_name;
             const OS_NAME = 'logger_os';
+
+            const getBrowserName = () => {
+                let browserInfo = navigator.userAgent;
+                let browser;
+                if (browserInfo.includes('Opera') || browserInfo.includes('Opr')) {
+                    browser = 'Opera';
+                } else if (browserInfo.includes('Edg')) {
+                    browser = 'Edge';
+                } else if (browserInfo.includes('Chrome')) {
+                    browser = 'Chrome';
+                } else if (browserInfo.includes('Safari')) {
+                    browser = 'Safari';
+                } else if (browserInfo.includes('Firefox')) {
+                    browser = 'Firefox'
+                } else {
+                    browser = 'unknown'
+                }
+                return browser;
+            }
+
 
             function init() {
 
                 var data = new google.visualization.DataTable();
                 data.addColumn('number', 'Elapse');
-                data.addColumn('number', 'Controller Current');
-                data.addColumn('number', 'Controller Voltage');
                 data.addColumn('number', 'Track Voltage');
+                data.addColumn('number', 'Controller Voltage');
+                data.addColumn('number', 'Controller Current');
 
                 var materialOptions = {
-                    title: 'Red Lane Data Logger',
+                    title: 'Data Logger',
                     titlePosition: 'out',
                     titleTextStyle: {fontSize: 28, bold: true},
                     legend: { position: 'out' },
@@ -266,7 +489,6 @@ HTML_TEMPLATE = """
                     height: 600,
                     hAxis: {
                         gridlines: {color: 'grey', minSpacing: 40, multiple: 1, interval: [1], count: 10},
-                        minorGridlines: {color: 'violet', interval: [1]},
                         baseLine: 0, 
                         title: 'Elapse (sec)', 
                         textStyle: {color: 'black', bold: true},
@@ -274,20 +496,20 @@ HTML_TEMPLATE = """
                         viewWindow: {max: 10, min: 0}
                     },
                     series: {
-                        0: {color: 'red', lineWidth: 2, targetAxisIndex: 0},
-                        1: {color: 'blue', lineWidth: 2, targetAxisIndex: 1},
-                        2: {color: 'lightblue', lineWidth: 2, targetAxisIndex: 1}
+                        0: {color: 'lightblue', lineWidth: 2, targetAxisIndex: 0},
+                        1: {color: 'blue', lineWidth: 2, targetAxisIndex: 0},
+                        2: {color: 'red', lineWidth: 2, targetAxisIndex: 1}
                     },
                     vAxes: {
                         0: {
+                            title:'Voltage (V)',
+                            textStyle: {color: 'blue', bold: true},
+                            viewWindow: {min: -18, max: 18}
+                        },
+                        1: {
                             title:'Current (A)',
                             textStyle: {color: 'red', bold: true},
                             viewWindow: {min: -20, max: 20}
-                        },
-                        1: {
-                            title:'Voltage (V)',
-                            textStyle: {color: 'blue', bold: true},
-                            viewWindow: {min: -15, max: 15}
                         }
                     },
                     animation: {
@@ -299,16 +521,54 @@ HTML_TEMPLATE = """
 
                 var chart = new google.charts.Line(document.getElementById('linechart_material'));
 
+                function deleteADatabase(dbName) {
+                    console.log("Deleting database:", dbName);
+                    const DBDeleteRequest = window.indexedDB.deleteDatabase(dbName);
+
+                    DBDeleteRequest.onerror = (event) => {
+                        console.error("Error deleting database.");
+                    };
+
+                    DBDeleteRequest.onsuccess = (event) => {
+                        console.log("Database deleted successfully");
+                    };
+                }
+
                 function initDb() {
                     console.log("initDB");
                     const promise = indexedDB.databases();
-                        promise.then((databases) => {
-                        console.log(databases);
+                    promise.then((databases) => {
+                        var div = document.getElementById('databases');
+                        var h2 = document.createElement('h2');
+                        h2.textContent = 'Databases in the Browser';
+                        div.appendChild(h2);
+                        var ul = document.createElement('ul');
+                        div.appendChild(ul);
+                        for (var i = 0; i < databases.length; i++) {
+                            var li = document.createElement('li');
+                            var delButton = document.createElement('button');
+                            delButton.innerText = 'delete';
+                            delButton.onclick = function() { // remove list item here
+                                deleteADatabase(this.parentElement.id);
+                                this.parentElement.remove();
+                            };
+                            var disButton = document.createElement('button');
+                            disButton.innerText = 'graph';
+                            disButton.onclick = function() { // graph the database
+                                // TODO graph it
+                            };
+                            li.appendChild(document.createTextNode(databases[i].name));
+                            li.setAttribute("id", databases[i].name);
+                            li.appendChild(delButton);
+                            li.appendChild(disButton);
+                            ul.appendChild(li);
+                            console.log(databases[i].name, databases[i].version);
+                            // deleteADatabase(databases[i].name);
+                        }
                     });
 
-
                     let now = new Date();
-                    // one db per day
+                    // New db every session
                     db_name = DB_NAME + now.getFullYear() + now.getMonth() + now.getDate() + now.getHours() + now.getMinutes() + now.getSeconds();
                     const openRequest = window.indexedDB.open(db_name, 1);
                     openRequest.addEventListener("error", () =>
@@ -319,8 +579,7 @@ HTML_TEMPLATE = """
 
                         // Store the opened database object in the db variable. This is used a lot below
                         db = openRequest.result;
-                        // createObjectStore();               not allowed here        // Create a new object store every time
-                        // Run the displayData() function to display the notes already in the IDB
+                        // Display the list of databases in the form
                         // displayData();
                     });
                     function createObjectStore() {
@@ -332,9 +591,9 @@ HTML_TEMPLATE = """
                             autoIncrement: false,
                         });
                         // Define what data items the objectStore will contain
-                        objectStore.createIndex("c_current", "c_current", { unique: false });
-                        objectStore.createIndex("c_volts", "c_volts", { unique: false });
                         objectStore.createIndex("t_volts", "t_volts", { unique: false });
+                        objectStore.createIndex("c_volts", "c_volts", { unique: false });
+                        objectStore.createIndex("c_current", "c_current", { unique: false });
                         console.log("Database setup complete");
                     }
                     openRequest.addEventListener("upgradeneeded", (e) => {
@@ -344,36 +603,24 @@ HTML_TEMPLATE = """
                         createObjectStore();
                     });
                 }
-                function addData(ts, c_current, c_volts, t_volts) {
+                function addData(ts, t_volts, c_volts, c_current) {
                     // Adds a row to the database
-                    // prevent default - we don't want the form to submit in the conventional way
-                    // e.preventDefault();
-                    // console.log("adding", ts, c_current, c_volts, t_volts, mark);
-                    // grab the values entered into the form fields and store them in an object ready for being inserted into the DB
-                    const newItem = { ts: ts, c_current: c_current,
-                                    c_volts: c_volts, t_volts: t_volts};
-
+                    // console.log("adding", ts, t_volts, c_volts, c_current, mark);
+                    const newItem = { ts: ts, t_volts: t_volts, c_volts: c_volts, c_current: c_current};
                     // open a read/write db transaction, ready for adding the data
                     const transaction = db.transaction([OS_NAME], "readwrite");
-
                     // call an object store that's already been added to the database
                     const objectStore = transaction.objectStore(OS_NAME);
-
                     // Make a request to add our newItem object to the object store
                     const addRequest = objectStore.add(newItem);
 
                     addRequest.addEventListener("success", () => {
-                        // Clear the form, ready for adding the next entry
-                        // titleInput.value = "";
-                        // bodyInput.value = "";
+                        console.log("Data added successfully");
                     });
 
-                // Report on the success of the transaction completing, when everything is done
+                   // Report on the success of the transaction completing, when everything is done
                     transaction.addEventListener("complete", () => {
                         console.log("Transaction completed: database modification finished.");
-
-                        // update the display of data to show the newly added item, by running displayData() again.
-                        // displayData();
                     });
 
                     transaction.addEventListener("error", () =>
@@ -384,8 +631,6 @@ HTML_TEMPLATE = """
                     console.log("Opening eventsource connection");
                     const eventSource = new EventSource('/connect-client');
                     eventSource.onerror = onError;
-                    // eventSource.addEventListener("data", onMessage);
-                    // eventSource.addEventListener("mark", onMark);
                     eventSource.onmessage = onMessage;
                     eventSource.onopen = onOpen;
                 }
@@ -414,54 +659,109 @@ HTML_TEMPLATE = """
                     xVal = parseInt(tok[0]);                  // elapse time as an int
                     rowCount = data.getNumberOfRows();
                     if (rowCount == 0) {  // before we add anything, save the first e time
-                        console.log('First firstElapseTime is:', tok[0]);
+                        // console.log('First firstElapseTime is:', tok[0]);
                         firstElapseTime = xVal;
                     }
                     // Handle the mark - only save data between marks?
-                    if (tok[4] == '1') {
+                    if (INDEXED_DB_SUPPORTED) {
+                        if (tok[4] == '1') {
+                            if (saveData) {
+                                console.log("Mark found stop saving data");
+                                materialOptions.series[0].lineWidth = 2;
+                                materialOptions.series[1].lineWidth = 2;
+                                materialOptions.series[2].lineWidth = 2;
+                                hAxis.title = 'Elapse (sec)';
+                                hAxis.textStyle.color = 'black';
+                                saveData = false;    
+                            } else {
+                                console.log("mark found start saving data");
+                                materialOptions.series[0].lineWidth = 10;
+                                materialOptions.series[1].lineWidth = 10;
+                                materialOptions.series[2].lineWidth = 10;
+                                hAxis.title = 'Elapse (sec) - saving data in: ' + db_name;
+                                hAxis.textStyle.color = 'red';
+                                saveData = true;
+                            }
+                        }
                         if (saveData) {
-                            console.log("mark found stop saving data");
-                            // TODO change the display  to show it's being saved, create an overlay
-                            materialOptions.series[0].lineWidth = 1;
-                            materialOptions.series[1].lineWidth = 1;
-                            materialOptions.series[2].lineWidth = 1;
-                            saveData = false;
-                        } else {
-                            console.log("mark found start saving data");
-                            // TODO change the display  to show it's being saved, create an overlay
-                            materialOptions.series[0].lineWidth = 10;
-                            materialOptions.series[1].lineWidth = 10;
-                            materialOptions.series[2].lineWidth = 10;
-                            saveData = true;
+                            console.log('Saving data to database');
+                            addData(tok[0], tok[1], tok[2], tok[3]);
                         }
                     }
-                    if (saveData) {
-                        console.log('Saving data to database');
-                        addData(tok[0], tok[1], tok[2], tok[3]);
-                    }
-                    console.log('Add row to chart');
+                    // console.log('Add row to chart');
                     eTime = (xVal - firstElapseTime) / 1000000000; // scale it to n.xxxxx seconds
                     if (eTime < 0.0) {    // The clock reset so reestablish the zero
                         firstElapseTime = xVal;
                         eTime = 0.0;
                     }
-                    console.log('Normalized etime', eTime);
+                    // console.log('Normalized etime', eTime);
                     data.addRow([parseFloat(eTime),parseFloat(tok[1]),parseFloat(tok[2]),parseFloat(tok[3])]);
 
                     // console.log('Max, min, etime', materialOptions.hAxis.viewWindow.max, materialOptions.hAxis.viewWindow.min, eTime);
                     latestX = Math.ceil(eTime);  // Round up
-                    console.log('if eTime ceil is bigger than max, move vw', latestX, materialOptions.hAxis.viewWindow.min, materialOptions.hAxis.viewWindow.max);
-                    if (latestX > materialOptions.hAxis.viewWindow.max) {       // step the vw forward in front of the value
+                    // console.log('if eTime ceil is bigger than max, move vw', latestX, materialOptions.hAxis.viewWindow.min, materialOptions.hAxis.viewWindow.max);
+                    if (latestX >= materialOptions.hAxis.viewWindow.max) {       // step the vw forward in front of the value
                         materialOptions.hAxis.viewWindow.max++;
                         materialOptions.hAxis.viewWindow.min++;
-                        console.log('Min, max, rowct', materialOptions.hAxis.viewWindow.min, materialOptions.hAxis.viewWindow.max, data.getNumberOfRows());
+                        // console.log('Min, max, rowct', materialOptions.hAxis.viewWindow.min, materialOptions.hAxis.viewWindow.max, data.getNumberOfRows());
                         data.removeRows(0, Math.floor(rowCount / 10) - 1);           // garbage collect
                     }
                     // console.log("draw", materialOptions);
+                    console.log("chart draw", performance.now());
                     chart.draw(data, google.charts.Line.convertOptions(materialOptions));
                 }
+                function displayData() {
+                // Open our object store and then get a cursor - which iterates through all the
+                // different data items in the store
+                    const objectStore = db.transaction("notes_os").objectStore("notes_os");
+                    objectStore.openCursor().addEventListener("success", (e) => {
+                    // Get a reference to the cursor
+                        var data = new google.visualization.DataTable();
+                        data.addColumn('number', 'Elapse');
+                        data.addColumn('number', 'Track Voltage');
+                        data.addColumn('number', 'Controller Voltage');
+                        data.addColumn('number', 'Controller Current');
 
-                initDb();
+                        const cursor = e.target.result;
+
+                        // If there is still another data item to iterate through, keep running this code
+                        if (cursor) {
+                            data.addRow([parseFloat(cursor.value.ts),
+                                parseFloat(cursor.value.t_volts),
+                                parseFloat(cursor.value.c_volts),
+                                parseFloat(cursor.value.c_current)
+                                ]);
+                            // Iterate to the next item in the cursor
+                            cursor.continue();
+                        } 
+                        console.log("All data added to chart");
+                    });
+                }
+                function graphData(dbName) {
+                    // Open the database readonly
+                    const openRequest = window.indexedDB.open(dbName, 1);
+                    openRequest.addEventListener("error", () =>
+                        console.error("Database", dbName, "failed to open")
+                    );
+                    openRequest.addEventListener("success", () => {
+                        console.log("Database", dbName ,"opened successfully");
+
+                        // Store the opened database object in the db variable. This is used a lot below
+                        graphDb = openRequest.result;
+                        // Display the list of databases in the form
+                        displayData();
+                    });
+                }
+                const browserName = getBrowserName();
+                if (browserName != 'Firefox') {
+                    console.log("IndexedDB is supported.");
+                    INDEXED_DB_SUPPORTED = true;
+                    initDb();
+                } else {
+                    // TODO display this in the browser
+                    console.log("IndexedDB is not supported.");
+                }
+                
                 initializeEventSource();
                 chart.draw(data, google.charts.Line.convertOptions(materialOptions));
 
@@ -472,14 +772,47 @@ HTML_TEMPLATE = """
     </head>
     <body>
         <div id="chart_wrap">
-            <div id="linechart_material" style="width: 900px; height: 500px"></div>
+            <div id="linechart_material" style="width: auto; height: 600px"></div>
         </div>
-        <div id="edit_data">
-            <!-- TODO Display the available databases and offer a/c/d/display -->
+        <div id="databases_wrap">
+            <div id="databases" style="width: auto">
+            <!-- TODO put this in its own page -->
+            </div>
         </div>
     </body>
 </html>
 """
+
+MY_ID = """
+<html lang="en">
+    <head>
+        <title>My ID</title>
+    </head>
+    <body>
+    <h1>""" + ID + """</h1>
+    Hostname: """ + wifi.radio.hostname + """<br>
+    Ip: """ + str(wifi.radio.ipv4_address) + """<br>
+    Git: <a href='""" + GIT + """'>""" + GIT + """</a><br>
+    </body>
+</html>
+"""
+
+MIMETypes.configure(
+    default_to="text/plain",
+    # Unregistering unnecessary MIME types can save memory
+    keep_for=[".html", ".css", ".js", ".ico"],
+    # If you need to, you can add additional MIME types
+)
+
+
+@server.route("/js/test.js")
+def home(request: Request):
+    return FileResponse(request, "test.js", "/js")
+
+
+@server.route("/id", GET)
+def client(request: Request):
+    return Response(request, MY_ID, content_type="text/html")
 
 
 @server.route("/client", GET)
@@ -497,12 +830,36 @@ def connect_client(request: Request):
     return response
 
 
-server.start(str(wifi.radio.ipv4_address))
-while True:
-    pool_result = server.poll()
+try:
+    pin = digitalio.DigitalInOut(board.GP22)
+    pin.direction = digitalio.Direction.INPUT
+    pin.pull = digitalio.Pull.UP
+    button = Debouncer(pin)
+    while True:
+        pool_result = server.poll()
+        button.update()
+        if button.fell:
+            if debug:
+                print('DEBUG - button Just pressed')
+            connected_client.collected = monotonic_ns()
+        elif button.rose:
+            if debug:
+                print('DEBUG - button Just released')
+        else:
+            pass
+        if connected_client.ready:
+            connected_client.send_message()
+except Exception as e:
+    print("Error:\n", str(e))
+    print("Resetting mcu in 10 seconds")
+    tune.REBOOT.play()
+    led_on(red_led)
+    led_on(yellow_led)
+    time.sleep(5)
+    microcontroller.reset()
 
-    if connected_client.ready:
-        # lt = monotonic_ns()
-        # if lt % 1000000 == 0:  # simulate a button press
-        # connected_client.collected = lt
-        connected_client.send_message()
+
+
+
+
+

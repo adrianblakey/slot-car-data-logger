@@ -2,8 +2,6 @@
 Copyright (c) 2023 Adrian Blakey
 """
 import os
-import sys
-from stat import S_ISREG, ST_CTIME, ST_MODE
 import ipaddress
 import wifi
 import socketpool
@@ -16,7 +14,7 @@ from ulab import numpy as np
 import analogio
 import multiprocessing
 from abc import ABC, abstractmethod
-import csv
+
 
 """
 Channels:
@@ -139,11 +137,11 @@ class Voltage(Electricity):
         self.value = 0
 
     @property
-    def value(self) -> float:
+    def value(self) -> int:
         return self._value
 
     @value.setter
-    def value(self, value: float):
+    def value(self, value: int):
         self._value = value
 
 
@@ -153,11 +151,11 @@ class Current(Electricity):
         self.value = 0
 
     @property
-    def value(self) -> float:
+    def value(self) -> int:
         return self._value
 
     @value.setter
-    def value(self, value: float):
+    def value(self, value: int):
         self._value = value
 
 
@@ -370,58 +368,19 @@ async def read_adc(pin: microcontroller.Pin, electricity: Electricity):
     with analogio.AnalogIn(pin) as adc:
         while True:
             electricity.value = (adc.value * 3.3) / 65536
-            # TODO add/subtract the zero calibration value?
             print("adc value ", electricity.value)
-            write_electric_value(electricity)
             await asyncio.sleep(0.1)     # 100mS
 
 
+def open_file():
+    """Open a file to write an electricity csv value to"""
 
 
+async def write_electric_value(file, electricity: Electricity):
+    pass
 
 
-def open_electric_value(electricity: Electricity, tag: str):
-    if isinstance(electricity, Voltage) & tag == 'C':
-        name = '/data/' + file_prefix + '/' + 'cont_v.csv'
-        header = ['time', 'voltage']
-    elif isinstance(electricity, Voltage) & tag == 'T':
-        name = '/data/' + file_prefix + '/'  'trak_v.csv'
-        header = ['time', 'voltage']
-    elif isinstance(electricity, Current):
-        name = '/data/' + file_prefix + '/'  'cont_i.csv'
-        header = ['time', 'current']
-    else:
-        pass
-    try:
-        with open(name, "w", encoding='UTF-8', newline='') as fp:
-            writer = csv.writer(fp)
-            writer.write(header)
-    except OSError as e:
-        pass
-
-
-def write_controller_voltage():
-
-def write_electric_value(electricity: Electricity, tag: str):
-    row = [str(time.time()), '{0:f}'.format(electricity.value)]
-    if isinstance(electricity, Voltage) & tag == 'C':
-        name = '/data/' + file_prefix + '/'  'cont_v.csv'
-    elif isinstance(electricity, Voltage) & tag == 'T':
-        name = '/data/' + file_prefix + '/'  'trak_v.csv'
-    elif isinstance(electricity, Current):
-        name = '/data/' + file_prefix + '/'  'cont_i.csv'
-    else:
-        pass
-    try:
-        with open(name, "a", encoding='UTF-8', newline='') as fp:
-            writer = csv.writer(fp)
-            writer.writerow(row)
-    except OSError as e:
-        pass
-
-
-async def main(board_led_task: asyncio.Task, controller_led_task: asyncio.Task,
-               board_flash_sequence: FlashSequence, controller_flash_sequence: FlashSequence):
+async def main(board_led_task, controller_led_task, board_flash_sequence, controller_flash_sequence):
     print("create the calibration")
     calibration_setting = Calibrate()
     print("start the button task")
@@ -430,9 +389,6 @@ async def main(board_led_task: asyncio.Task, controller_led_task: asyncio.Task,
     controller_current = Current()
     controller_voltage = Voltage()
     track_voltage = Voltage()
-    open_electric_value(controller_current)
-    open_electric_value(controller_voltage, 'C')
-    open_electric_value(track_voltage, 'T')
     controller_current_task = asyncio.create_task(read_adc(board.GP26, controller_current))  # ADC0
     controller_voltage_task = asyncio.create_task(read_adc(board.GP27, controller_voltage))
     track_voltage_task = asyncio.create_task(read_adc(board.GP28, track_voltage))
@@ -456,26 +412,8 @@ def startup(board_flash_sequence: FlashSequence, controller_flash_sequence: Flas
 
     scan_wifi()
     connect_to_wifi()
-    # Cleanup or make the data directory
-    if os.path.isdir('/data'):
-        entries = [f for f in os.path.listdir('/data') if os.path.isfile(os.path.join('/data', f))]
-        entries = ((os.stat(path), path) for path in entries)
-        # leave only regular files, insert creation date
-        entries = ((stat[ST_CTIME], path)
-                   for stat, path in entries if S_ISREG(stat[ST_MODE]))
-        i = 0
-        for cdate, path in sorted(entries):
-            print(time.ctime(cdate), os.path.basename(path))
-            i += 1
-            if i > 3:
-                os.remove(path)
-    else:
-        os.mkdir('/data/' + file_prefix)
-
     return board_led_task, controller_led_task
 
-
-file_prefix = str(time.time())
 
 # This is the main program
 try:
