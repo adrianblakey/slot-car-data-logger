@@ -24,19 +24,23 @@ Async io for the input
 
 import os
 from time import monotonic, monotonic_ns, time, sleep
+
+import asyncio
 import socketpool
 import wifi
 import mdns
 import board
-import pwmio
 import analogio
 import microcontroller
 import digitalio
 from adafruit_debouncer import Debouncer
 from adafruit_httpserver import Server, Request, Response, FileResponse, MIMETypes, GET, JSONResponse, SSEResponse
 import tune
+from interval import Interval
+from led import Led
+import log
 
-debug = True
+
 """ TODO Lane colors by track lanes, capture track lane count """
 LANE_COLORS_4 = ['red', 'white', 'blue', 'black']
 LANE_COLORS_5 = ['red', 'white', 'blue', 'yellow', 'black']
@@ -63,6 +67,11 @@ board_led.value = False
 ZERO_CURRENT: float = 1.65       # nominal zero, changes on calibration
 SF: float = 17.966 / 3.3         # const
 
+if log.is_debug:
+    debug = True
+else:
+    debug = False
+
 
 def flash_led(led: digitalio.DigitalInOut, on_time: float = 0.2, val: bool = False) -> None:
     led.value = val
@@ -82,12 +91,14 @@ def scan_wifi_for(ssid: str) -> bool:
     """ Scans for a specific ssid """
     rc = False
     for network in wifi.radio.start_scanning_networks():
-        if debug:
-            print("DEBUG - %s\tRSSI: %d\tChannel: %d" % (
+        if log.is_debug:
+            log.logger.debug("%s\tRSSI: %d\tChannel: %d" % (
                 str(network.ssid, "utf-8"), network.rssi, network.channel))
+            # print("DEBUG - %s\tRSSI: %d\tChannel: %d" % (
+                # str(network.ssid, "utf-8"), network.rssi, network.channel))
         if network.ssid == ssid:
-            if debug:
-                print("DEBUG - Found matching WiFi network:\t%s\tRSSI: %d\tChannel: %d" % (
+            if log.is_debug:
+                log.logger.debug("Found matching WiFi network:\t%s\tRSSI: %d\tChannel: %d" % (
                     str(network.ssid, "utf-8"), network.rssi, network.channel))
             rc = True
             break
@@ -98,17 +109,17 @@ def scan_wifi_for(ssid: str) -> bool:
 def look_for_host(hostname: str) -> str:
     """Search for a specific hostname on the network"""
     ip = None
-    if debug:
-        print("DEBUG - Looking for hostname:", hostname)
+    if log.is_debug:
+        log.logger.debug("Looking for hostname: %s", hostname)
     temp_pool = socketpool.SocketPool(wifi.radio)
     try:
         [(family, socket_type, socket_protocol, flags, (ip, port))] = temp_pool.getaddrinfo(host=hostname,
                                                                                             port=80)  # port is required
-        if debug:
-            print("DEBUG - Found address:", ip)
+        if log.is_debug:
+            log.logger.debug("Found address: %s", ip)
     except OSError as ex:
-        if debug:
-            print("DEBUG - Hostname", hostname, "not found", str(ex), type(ex))
+        if log.is_debug:
+            log.logger.debug("Hostname: %s not found ex: %s type: %s", hostname, ex, type(ex))
         rc = False
     return ip
 
@@ -116,27 +127,27 @@ def look_for_host(hostname: str) -> str:
 def uniqueify_hostname(hostname: str) -> str:
     """Looks for the hostname on the network. If found tries suffixes until it finds
     one free that it can use"""
-    if debug:
-        print('DEBUG - uniqueify_hostname()', hostname)
+    if log.is_debug:
+        log.logger.debug('uniqueify_hostname() %s', hostname)
     # TODO recurses forever if all colors used up!
     # Three chars to cover the 10 char hostname bug
     ip = look_for_host(hostname)
     if ip:  # found a match
         if str(ip) == str(wifi.radio.ipv4_address):  # If the IP address matches my hostname then reuse it
-            if debug:
-                print('DEBUG - ip:', ip, 'matches hostname:', hostname, 'return this hostname')
+            if log.is_debug:
+                log.logger.debug('ip: %s matches hostname: %s returning this hostname', ip, hostname)
             return hostname
         else:
-            if debug:
-                print('DEBUG - ip:', ip, 'does NOT match ip:', wifi.radio.ipv4_address, 'return for hostname', hostname)
+            if log.is_debug:
+                log.logger.debug('ip: %s does NOT match wifi ip: %s return hostname %s', ip, wifi.radio.ipv4_address, hostname)
         tokens = hostname.split("-")
         if len(tokens) > 1:
             color = tokens[1]
-            if debug:
-                print("DEBUG - Color suffix", color)
+            if log.is_debug:
+                log.logger.debug("Color suffix %s", color)
             for i, lane_color in enumerate(LANE_COLORS):  # Find the next color
-                if debug:
-                    print("DEBUG - lane color", lane_color)
+                if log.is_debug:
+                    log.logger.debug("lane color %s", lane_color)
                 if color == lane_color:  # Match my current color - which is taken
                     if i == len(LANE_COLORS) - 1:  # Last one match - so it resets
                         i = -1
@@ -154,25 +165,25 @@ def uniqueify_hostname(hostname: str) -> str:
 def connect_to_wifi() -> (str, str):
     the_time = str(time())
     wifi.radio.hostname = str(the_time)  # Set a garbage hostname to run search for other hosts
-    if debug:
-        print("DEBUG - Temp Hostname for scanning:", wifi.radio.hostname)
+    if log.is_debug:
+        log.logger.debug("Temp Hostname for scanning: %s", wifi.radio.hostname)
     ssid = os.getenv("CIRCUITPY_WIFI_SSID")  # We'll use a conventional SSID, say slot-car-logger
     if not scan_wifi_for(ssid):
         led_on()
-        if debug:
-            print("DEBUG - Unable to find default network ssid:", ssid)
+        if log.is_debug:
+            log.logger.debug("Unable to find default network ssid: %s", ssid)
         raise RuntimeError('No such ssid ' + ssid)
     else:
-        if debug:
-            print("DEBUG - Success: network", ssid, "found, connecting with default credentials.")
+        if log.is_debug:
+            log.logger.debug("Success: network %s found, connecting with default credentials.", ssid)
 
     password = os.getenv("CIRCUITPY_WIFI_PASSWORD")  # We'll use a conventional password too, say sl0tc1r
     try:
         wifi.radio.connect(str(ssid), str(password))
     except ConnectionError:
         led_on(red_led)
-        if debug:
-            print("DEBUG - Unable to connect with default credentials")
+        if log.is_debug:
+            log.logger.debug("Unable to connect with default credentials")
         raise RuntimeError('Bad WiFi password')
     return ssid, password
 
@@ -181,32 +192,32 @@ def connect_to_wifi_as_me(ssid: str, password: str):
     hostname = uniqueify_hostname("logger-" + LANE_COLORS[MY_LANE])
     wifi.radio.stop_station()  # Discard temp connection
 
-    if debug:
-        print("DEBUG - Wifi connection:", wifi.radio.connected)
-        print("DEBUG - Setting hostname to", hostname, "before reconnecting")
+    if log.is_debug:
+        log.logger.debug("Wifi connection: %s", wifi.radio.connected)
+        log.logger.debug("Setting hostname to: %s before reconnecting", hostname)
 
     wifi.radio.hostname = str(hostname)
     try:
         wifi.radio.connect(str(ssid), str(password))
     except ConnectionError as e:
         led_on(red_led)
-        if debug:
-            print("DEBUG - Unable to connect with default credentials", str(e))
+        if log.is_debug:
+            log.logger.debug("Unable to connect with default credentials %s", e)
         raise RuntimeError('Unable to connect to WiFi with:', ssid, password)
 
 
 def advertise_service():
     """ Advertise the service to mdns """
     try:
-        if debug:
-            print("DEBUG - MDNS advertisement")
+        if log.is_debug:
+            log.logger.debug("MDNS advertisement")
         mdns_server = mdns.Server(wifi.radio)
         mdns_server.hostname = wifi.radio.hostname
         mdns_server.instance_name = 'Slot car data logger'
     #    mdns_server.advertise_service(service_type="_http", protocol="_tcp", port=80)
     except RuntimeError as e:
-        if debug:
-            print("DEBUG - MDNS setting failed:", str(e))
+        if log.is_debug:
+            log.logger.debug("MDNS setting failed: %s", str(e))
 
 
 def calibrate_current():
@@ -223,8 +234,8 @@ def calibrate_current():
 
 def scale(input_signal: float) -> float:
     """ Scale the current """
-    if debug:
-        print("DEBUG - input signal:", str(input_signal))
+    if log.is_debug:
+        log.logger.debug("input signal: %s", input_signal)
     return (input_signal - ZERO_CURRENT) / .025          # ~1.65 = 0 point, .025 = 1 amp
 
 
@@ -245,26 +256,26 @@ def input_number(minimum: int = 4, maximum: int = 8) -> int:
             yellow_debouncer.update()
             if yellow_debouncer.fell:
                 start = monotonic()
-                if debug:
-                    print('DEBUG - button pressed', str(start))
+                if log.is_debug:
+                    log.logger.debug('button pressed %s', start)
                 the_number += 1
                 if the_number > maximum:           # Reset to 1
                     flash_led(red_led)
                     tune.LO_HI.play()
                     the_number = 1
-                if debug:
-                    print('DEBUG - count:', the_number)
+                if log.is_debug:
+                    log.logger.debug('count: %s', the_number)
             elif yellow_debouncer.rose:
                 elapse = monotonic() - start
-                if debug:
-                    print('DEBUG - button released, duration:', str(yellow_debouncer.current_duration), str(elapse))
+                if log.is_debug:
+                    log.logger.debug('button released, duration: %s %s', yellow_debouncer.current_duration, elapse)
                 if elapse <= .4:    # Short press < .4 sec, good count
                     tune.INPUT.play()
                     flash_led(yellow_led)
                 else:               # Long press, decrement the count and leave only if > min
                     the_number -= 1
-                    if debug:
-                        print("DEBUG - long press leave with the number if it's big enough", the_number, minimum)
+                    if log.is_debug:
+                        log.logger.debug("long press leave with the number if it's big enough %s %s", the_number, minimum)
                     if the_number >= minimum:
                         [tune.FEEDBACK.play() for _ in range(the_number)]  # confirm with beeps
                         flash_led(yellow_led)
@@ -342,13 +353,20 @@ class ConnectedClient:
             # Track voltage, controller voltage, controller current
             self._response.send_event(
                 f"{monotonic_ns()},{((tV.value * 3.3) / 65536) * SF},{((cV.value * 3.3) / 65536) * SF},{scale((cI.value * 3.3) / 65536)},{mark}")
-        print("DEBUG - send_message ", str(monotonic()), str(monotonic_ns()))
+        if log.is_debug:
+            log.logger.debug("send_message %s %s", monotonic(), monotonic_ns())
         self._next_message = monotonic() + .2
         board_led.value = not board_led.value
 
+"""
+async def run_leds():
+    interval = Interval(0.0)
+    red_led = Led(pin=board.GP17, interval=interval, value=True)
+    led_task = asyncio.create_task(red_led.blink())
+"""
+
 
 def start_up() -> (str, str):
-    print()
     tune.START_UP.play()
 
     # Startup flash
@@ -359,8 +377,8 @@ def start_up() -> (str, str):
         flash_led(yellow_led, 0.1)
 
     led_on(board_led, True)            # Flashes if not set - turn it off if there is an error
-    if debug:
-        print("DEBUG - Calibrate current")
+    if log.is_debug:
+        log.logger.debug("Calibrate current")
     calibrate_current()
     flash_led(yellow_led)
     ssid, password = connect_to_wifi()                      # Do it here - we might be able to get config details ...
@@ -368,10 +386,13 @@ def start_up() -> (str, str):
     return ssid, password
 
 
+print()
+if log.is_debug:
+    log.logger.debug("Run start up")
 ssid, password = start_up()
 
 while True:
-    LANE_COUNT = input_number()              # Total number of lanes
+    LANE_COUNT = input_number(minimum=1, maximum=8)              # Total number of lanes
     flash_led(yellow_led)
     if LANE_COUNT == 4:
         LANE_COLORS = LANE_COLORS_4
@@ -383,22 +404,27 @@ while True:
         LANE_COLORS = LANE_COLORS_7
     elif LANE_COUNT == 8:
         LANE_COLORS = LANE_COLORS_8
-    if debug:
-        print("DEBUG - my lane of:", LANE_COUNT)
+    if log.is_debug:
+        log.logger.debug("my lane of: %s", LANE_COUNT)
     MY_LANE = input_number(minimum=1, maximum=LANE_COUNT)       # My lane number red = 1 ...
     if not nav():
         break
-
+if log.is_debug:
+    log.logger.debug("Flash yellow led")
 flash_led(yellow_led)
+if log.is_debug:
+    log.logger.debug("Connect to wifi as me")
 connect_to_wifi_as_me(ssid, password)
+if log.is_debug:
+    log.logger.debug("Flash yellow led")
 flash_led(yellow_led)
 pool = socketpool.SocketPool(wifi.radio)
 server = Server(pool, debug=debug, root_path='/static')
-if debug:
-    print("DEBUG - advertise service")
+if log.is_debug:
+    log.logger.debug("Advertise service")
 advertise_service()
-if debug:
-    print("DEBUG - start server")
+if log.is_debug:
+    log.logger.debug("Start server")
 server.start(str(wifi.radio.ipv4_address))
 [flash_led(yellow_led) for _ in range(5)]
 connected_client = ConnectedClient()
@@ -839,19 +865,20 @@ try:
         pool_result = server.poll()
         button.update()
         if button.fell:
-            if debug:
-                print('DEBUG - button Just pressed')
+            if log.is_debug:
+                log.logger.debug('button Just pressed')
             connected_client.collected = monotonic_ns()
         elif button.rose:
-            if debug:
-                print('DEBUG - button Just released')
+            if log.is_debug:
+                log.logger.debug('button Just released')
         else:
             pass
         if connected_client.ready:
             connected_client.send_message()
 except Exception as e:
-    print("Error:\n", str(e))
-    print("Resetting mcu in 10 seconds")
+    if log.is_debug:
+        log.logger.debug("Error:\n %s", e)
+        log.logger.debug("Resetting mcu in 10 seconds")
     tune.REBOOT.play()
     led_on(red_led)
     led_on(yellow_led)

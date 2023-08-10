@@ -1,8 +1,8 @@
 
-
 from time import monotonic, monotonic_ns, time, sleep
 import board
 import pwmio
+import log
 
 
 # Approx Tone frequencies
@@ -96,12 +96,9 @@ CS8: int = 4435
 D8: int = 4699
 DS8: int = 4978
 
-INTERVALS = [2, 2, 2, 2, 2, 3, 2, 3, 3, 3, 3, 4]
 QUARTER = 4    # Four beats per bar
 EIGHT = 8      # 8 beats ...
 SIXTEENTH = 16
-
-
 OCTAVE = 2
 
 
@@ -131,6 +128,8 @@ class Note:
 class Tune:
     """ A series of played notes and their durations, played at a specific rate """
     def __init__(self, rate: int = 70, tune: list[Note] = []) -> None:
+        if log.is_debug:
+            log.logger.debug("Tune init")
         self._rate: int = rate
         self._tune: list[Note] = tune
 
