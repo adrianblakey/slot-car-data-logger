@@ -1,24 +1,27 @@
 import digitalio
-from interval import Interval
+
+import log
+from ledcontrol import LedControl
 import microcontroller
-import asyncio
+from time import sleep
+
 
 class Led:
     """ Represents a led, value is the on/off direction, initialized to off
         the board led is pull up, the other 2 are pull down where False is on """
 
-    def __init__(self, pin: microcontroller.Pin, interval: Interval, value: bool = True):
-        self._interval = interval
+    def __init__(self, pin: microcontroller.Pin, led_control: LedControl, on_value: bool = True):
+        self._led_control = led_control
         self._pin = pin
-        self._value = value
+        self._on_value = on_value
 
     @property
-    def interval(self) -> Interval:
-        return self._interval
+    def led_control(self) -> LedControl:
+        return self._led_control
 
-    @interval.setter
-    def interval(self, interval: Interval):
-        self._interval = interval
+    @led_control.setter
+    def led_control(self, led_control: LedControl):
+        self._led_control = led_control
 
     @property
     def pin(self) -> microcontroller.Pin:
@@ -29,23 +32,32 @@ class Led:
         self._pin = pin
 
     @property
-    def value(self) -> bool:
-        return self._value
+    def on_value(self) -> bool:
+        return self._on_value
 
-    @value.setter
-    def value(self, value: bool):
-        self._value = value
+    @on_value.setter
+    def on_value(self, on_value: bool):
+        self._on_value = on_value
 
-    async def blink(self) -> None:
-        """ Blink the led forever.
-        The blinking rate is controlled by the supplied Interval object.
-        """
+    def control(self):
         with digitalio.DigitalInOut(self._pin) as led:
             led.switch_to_output()
-            while True:
-                led.value = not led.value
-                try:
-                    await asyncio.sleep(self._interval.value)
-                except asyncio.CancelledError as e:
-                    if debug:
-                        print(f'DEBUG - received request to cancel with: {e}')
+            if self.led_control.state == 'on':
+                if log.is_debug:
+                    log.logger.debug("%s Led on", __file__)
+                led.value = self.on_value
+            elif self.led_control.state == 'off':
+                led.value = not self.on_value
+            else:  # self.led_control.state == 'flash':
+                if log.is_debug:
+                    log.logger.debug("%s Led flash %s, reps: %s on value: %s on time: %4.2f off time: %4.2f", __file__,
+                                     self.led_control.color,
+                                     self.led_control.reps,
+                                     self.on_value, self.led_control.on_time, self.led_control.off_time)
+                for _ in range(self.led_control.reps):
+                    led.value = self.on_value
+                    sleep(self.led_control.on_time)
+                    led.value = not self.on_value
+                    sleep(self.led_control.off_time)
+
+

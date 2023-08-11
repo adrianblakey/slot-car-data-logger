@@ -45,55 +45,64 @@ Notes about the hardware.
 
 Channels:
 
-  GP18      - External LED, low = ON  
-  GP22      - Push button  
+  GP16      - Push button - black  
+  GP17      - External red LED, low = ON  
+  GP18      - External yellow LED, low = ON  
+  GP21      - Piezo sound - 2KHz - 10KHz  
+  GP22      - Push button - yellow
   GP26/ADC0 - Current drawn by the motor through the hand controller  
   GP27/ADC1 - Output voltage to track and motor from the hand controller  
   GP28/ADC2 - Track incoming supply voltage  
 
-Note: Set GP18 to output drive strength 12mA, to minimise volt-drop in the micro (PADS_BANK0: GPIOx Registers) 
+Notes: 
 
-Note: Worth experimenting with the SMPS mode pin (WL_GPIO1) to find out which
+ 1. Set GP18 to output drive strength 12mA, to minimise volt-drop in the micro (PADS_BANK0: GPIOx Registers)  
+
+ 2. Worth experimenting with the SMPS mode pin (WL_GPIO1) to find out which
 setting (low or high) gives the least noise in the ADC readings (with
 the little test programme I got around 10 decimal variation, of a 12 bit
-value, in the current zero value)
+value, in the current zero value)  
 
-Please choose a pin to use as a program loop time indicator,
-toggles from one state to another each time round the loop.
+ 3. Please choose a pin to use as a program loop time indicator,
+toggles from one state to another each time round the loop.  
 
-The original intention for the push button was to calibrate the zero
+ 4. The original intention for the yellow push button was to calibrate the zero
 current value (nominal 1/2 the micro 3V3 supply) with the black output
 lead disconnected, but it could also be used to calibrate the voltage
-signals by setting them to an exact 12.00V.
+signals by setting them to an exact 12.00V.  
 
 ## Design Notes
 
+Use the yellow button for input, the black for navigation. Perhaps Adafruit will provide Bluetooth - one day and then
+it can be used for configuration. https://github.com/adafruit/circuitpython/issues/7693
 
-There only a push button for input (unless and until we have BT) :-( so the device needs to make some assumptions
-about the WiFi network.
+Use the piezo for feedback. Try and obey some UI guidelines for this: https://uxplanet.org/dos-and-don-ts-of-sound-in-ux-766178f1ae95
 
 Tracks don't often have WiFi - so assume the owner (someone) will create a personal hotspot with a conventional name 
 like: "slot-car-network*" and a conventional password "sl0tc1r" Search for this - if it's not found blink a red led, 
 but continue to log data locally.
  
-Assume each logger needs a unique hostname. Without BT these need to be assigned algorithmically.
-No real way to match lane to a controller color but it's sensible to use this scheme.
-So the code needs to look for hostname clashes and uniqueify its own name by suffixing.  
+Input the number of lanes and my lane number on a short button press.
 
 With a network connection file(s) can be opened and the ADC inputs can be started, then the web server started to
 serve up the collected data.
 
 ## Getting Running
 
-The Pi is running the latest release (8.2.0) of Circuit Python, which is a derivative of micro python. More about it here: https://docs.circuitpython.org/en/latest/docs/index.html
+The Pi is running the latest release (8.2.2) of Circuit Python, which is a derivative of micro python. More about it here: https://docs.circuitpython.org/en/latest/docs/index.html
 
 With a modern version of Windows (>= 10) you should be able to simply plug the board into the computer using a USB cable and it'll magically appear as say the D: disk, and named CIRCUITPY - see https://learn.adafruit.com/welcome-to-circuitpython/the-circuitpy-drive
 
 Older Windows releases need drivers installed - read this: https://learn.adafruit.com/welcome-to-circuitpython/windows-7-and-8-1-drivers
 
-Use the Windows file manager to open the CIRCUITPY folder. In it you'll find two important files, namely:
+Use the Windows file manager to open the CIRCUITPY folder. In it you'll find several important files, namely:
 
   - code.py  
+  - button.py  
+  - interval.py  
+  - led.py
+  - log.py
+  - tune.py
   - settings.toml  
 
 There are some directories too - such as lib and static - you can ignore these.
@@ -102,11 +111,19 @@ Use an editor (such as Notepad++ https://notepad-plus-plus.org/downloads/) and m
 
 More about it here: https://docs.circuitpython.org/projects/httpserver/en/latest/examples.html
 
+If you have not attached a serial port to the REPL (see below) you also might want to change the LOGLEVEL to "ERROR". Note the double quotes are important leaving them out will make the code think it's a number not a string.
+
 Look at your WIFi Access point and transcribe your SSID/password into the settings file, replacing the values I have set for my own network. These will need to be standardized for actual use.
 
-The file code.py is by convention run by Circuit Python which is installed as a boot loader/primitive operating system on the Pi and is what makes the Pi look like another Windows drive. Reinstalling the Circuit Python is done by holding the reset button on the Pi while plugging in the USB - don't do that :-)
+The file code.py is by convention run by Circuit Python which is installed as a boot loader/primitive operating system on the Pi and is what makes the Pi look like another Windows drive. Reinstalling Circuit Python is done by holding the reset button on the Pi while plugging in the USB - don't do that unless you really want to copy a new version of Circuit Python to the logger.
 
-If you unplug the USB and plug it back in again the code will run and attempt to connect to your WiFi network, grab an IP address, and broadcast its name as "logger-red.local" to you home wifi network.
+If you unplug the USB and plug it back in again the "firmware" python code will run. 
+
+On startup once the device has got past the WiFi validation it flashes the leds and sounds a little jingle and then does a hi/lo beep to prompt for the number of lanes. 
+
+Short presses on the yellow button represent and accumulating number. A log (>.5sec) press inputs the accumulated number. You must input between 4 and 8 for the number of track lanes. If the values is outside this range you get an error beep.
+
+With the lane info input an attempt is made to re-connect to your WiFi network, grab an IP address, and broadcast its name as "logger-[lane-color].local" to you home wifi network.
 
 It'll then wait for a connection from a browser. 
 
