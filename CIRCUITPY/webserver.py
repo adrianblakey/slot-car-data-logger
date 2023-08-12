@@ -1,5 +1,5 @@
 
-from time import monotonic_ns, time, sleep
+from time import monotonic_ns
 
 import board
 import digitalio
@@ -11,7 +11,6 @@ import mdns
 import wifi
 import microcontroller
 import log
-import tune
 from calibration import Calibration
 from connectedclient import ConnectedClient
 
@@ -41,7 +40,6 @@ def __advertise_service():
 connected_client: ConnectedClient = ConnectedClient()
 pool = socketpool.SocketPool(wifi.radio)
 server: Server = Server(pool, debug=debug, root_path='/static')
-
 
 
 def run(calibration: Calibration):
@@ -82,11 +80,10 @@ def run(calibration: Calibration):
                 log.logger.debug("Resetting mcu in 10 seconds")
 
 
-
 @server.route("/cpu-information", append_slash=True)
 def cpu_information_handler(request: Request):
     """
-    Return the current CPU temperature, frequency, and voltage as JSON.
+    Return the current CPU temperature, frequ           ency, and voltage as JSON.
     """
 
     cpu_data = {
@@ -496,8 +493,11 @@ def client(request: Request) -> Response:
 def connect_client(request: Request) -> Response:
     global connected_client
     response = SSEResponse(request)
-    if connected_client.response is not None:
-        connected_client.response.close()  # Close any existing connection
+    try:
+        if connected_client.response is not None:
+            connected_client.response.close()  # Close any existing connection
+    except OSError as e:
+        pass
     connected_client.response = response
     return response
 
