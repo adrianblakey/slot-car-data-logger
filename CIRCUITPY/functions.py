@@ -9,15 +9,27 @@ import tune
 import digitalio
 from adafruit_debouncer import Debouncer
 import socketpool
+
+from led import Led
+from ledcontrol import LedControl
 from track import Track
-from adafruit_httpserver import Server, Request, Response, FileResponse, MIMETypes, GET, JSONResponse, SSEResponse
-import mdns
-from connectedclient import ConnectedClient
+
 
 if log.is_debug:
     debug = True
 else:
     debug = False
+
+
+def flash_start(red_led: Led, yellow_led: Led, green_led: Led):
+    if log.is_debug:
+        log.logger.debug("%s Running flash start", __file__)
+    tune.START_UP.play()
+    if log.is_debug:
+        log.logger.debug("%s Flash leds", __file__)
+    red_led.run()
+    yellow_led.run()
+    green_led.run()
 
 
 def calibrate_current() -> float:
@@ -48,6 +60,8 @@ def _scan_wifi_for(ssid: str) -> bool:
 
 
 def connect_to_wifi() -> (str, str):
+    """ Make a temp connection to the WiFi network
+        Throws Runtime - give up ... """
     wifi.radio.hostname = str(time())  # Set a garbage hostname to run search for other hosts
     if log.is_debug:
         log.logger.debug("%s Temp Hostname for scanning: %s", __file__, wifi.radio.hostname)
@@ -70,7 +84,17 @@ def connect_to_wifi() -> (str, str):
     return ssid, password
 
 
+def __flash_led(led: Led) -> None:
+    ledcontrol = led.led_control
+    ledcontrol.reps = 1
+    ledcontrol.state = 'flash'
+    ledcontrol.on_time = .2
+    ledcontrol.off_time = .2
+    led.run()
+
+
 def _capture_yellow(yellow_debouncer: Debouncer, minimum: int, maximum: int,
+                    red_led: Led, yellow_led: Led,
                     number: int = 0, tick: int = 0, start: float = 0.0) -> (bool, int, int, float):
     if not log.is_debug:
         log.logger.debug('%s capture_yellow min: %s max: %s number: %s tick: %s start: %4.2f',
@@ -81,49 +105,37 @@ def _capture_yellow(yellow_debouncer: Debouncer, minimum: int, maximum: int,
         tick = 0
     if yellow_debouncer.fell:
         start = monotonic()
-        number += 1
-        if log.is_debug:
-            log.logger.debug('%s yellow button pressed, start: %4.f2 number: %s min: %s max: %s', __file__, start,
-                             number, minimum, maximum)
-        if number > maximum:           # Reset to 1
-        # flash_led(red_led)
-            tune.LO_HI.play()
-            number = 1
-        else:
-            tune.INPUT.play()          # Confirmation "click"
-        if log.is_debug:
-            log.logger.debug('%s yellow count: %s', __file__, number)
+        tune.INPUT.play()  # Confirmation "click"
     elif yellow_debouncer.rose:
         elapse = monotonic() - start
         start = 0.0
         if log.is_debug:
-            log.logger.debug('%s yellow button released, duration: %s %4.4f', __file__,
-                             yellow_debouncer.current_duration,
+            log.logger.debug('%s yellow button released, elapse: %4.4f', __file__,
                              elapse)
-        if elapse <= .5:    # Short press < .4 sec, good count
+        if elapse <= .5:    # Short press < .5 sec, good count
+            number += 1
             if log.is_debug:
-                log.logger.debug('%s Short press', __file__)
-            pass
-        # flash_led(yellow_led)
-        else:               # Long press, decrement the count and leave only if > min
-            number -= 1
+                log.logger.debug('%s Short press, count: %s', __file__, number)
+        else:               # Long press, leave if in range
             if log.is_debug:
-                log.logger.debug("%s long yellow press, count: %s leave with the number if >= %s", __file__,
-                                    number, minimum)
-            if number >= minimum:
+                log.logger.debug("%s Long press, count: %s leave with the number if >= min %s <= max %s", __file__,
+                                 number, minimum, maximum)
+            if minimum <= number <= maximum:
                 [tune.FEEDBACK.play() for _ in range(number)]  # confirm with beeps
-                 # flash_led(yellow_led)
+                __flash_led(yellow_led)
                 return True, number, tick, start
             else:
-                # times = minimum - number
-                # flash_led(red_led)
-                tune.HI_LO.play()          # Keep inputting ...
+                if number > maximum:
+                    number = 0
+                __flash_led(red_led)
+                tune.HI_LO.play()          # Keep inputting, less than min
     else:
         pass
     return False, number, tick, start
 
 
-def input_number(minimum: int = 4, maximum: int = 8) -> int:
+def input_number(red_led: Led, yellow_led: Led,
+                 minimum: int, maximum: int) -> int:
     """ Press yellow button short press to increment, and long press to leave
         Black button to restart input """
     tune.INPUT_PROMPT.play()
@@ -144,15 +156,19 @@ def input_number(minimum: int = 4, maximum: int = 8) -> int:
                 if black_debouncer.fell:
                     if log.is_debug:
                         log.logger.debug('%s black button pressed', __file__)
+                    tune.INPUT.play()
                 elif black_debouncer.rose:     # Go back/reset
                     if log.is_debug:
                         log.logger.debug('%s black button released', __file__)
                     rc, number, tick, start = _capture_yellow(yellow_debouncer, minimum, maximum,
+                                                              red_led, yellow_led,
                                                               number=0, tick=0, start=0.0)
                     if rc:
                         return number
                 else:
-                    rc, number, tick, start = _capture_yellow(yellow_debouncer, minimum, maximum, number, tick, start)
+                    rc, number, tick, start = _capture_yellow(yellow_debouncer, minimum, maximum,
+                                                              red_led, yellow_led,
+                                                              number, tick, start)
                     if rc:
                         return number
 

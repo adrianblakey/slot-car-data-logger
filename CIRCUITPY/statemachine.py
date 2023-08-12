@@ -1,11 +1,12 @@
+import board
 
 import log
-import tune
 from ledcontrol import LedControl
 from led import Led
 import functions
 from calibration import Calibration
 from track import Track
+
 import gc
 
 
@@ -16,76 +17,49 @@ ip = ''
 class StateMachine:
     """ Drives the processing """
 
-    def __init__(self, red_led: Led, yellow_led: Led, green_led: Led, red_led_control: LedControl,
-                 yellow_led_control: LedControl,
-                 green_led_control: LedControl, calibration: Calibration, track: Track, states: list, state: int = 0,
-                 ):
-        self._red_led = red_led
-        self._yellow_led = yellow_led
-        self._green_led = green_led
-        self._red_led_control = red_led_control
-        self._yellow_led_control = yellow_led_control
-        self._green_led_control = green_led_control
-        self._calibration = calibration
-        self._track = track
-        self._states = states
-        self._state = state
+    def __init__(self):
+        self._red_led_control: LedControl = LedControl(color='red', state='flash', on_time=.2, off_time=.2)
+        self._yellow_led_control: LedControl = LedControl(color='yellow', state='flash', on_time=.2, off_time=.2)
+        self._green_led_control: LedControl = LedControl(color='green', state='flash', on_time=.2, off_time=.2)
+        self._red_led = Led(pin=board.GP17, led_control=self._red_led_control, on_value=False)
+        self._yellow_led = Led(pin=board.GP18, led_control=self._yellow_led_control, on_value=False)
+        self._green_led = Led(pin=board.LED, led_control=self._green_led_control, on_value=True)
+        self._calibration: Calibration = Calibration()     # Calibration settings
+        self._track: Track = Track()                       # Track we are on
+        self._states: list = StateMachine.STATES          # All possible states
+        self._state: int = 0                               # Starting state
 
-    @property
-    def calibration(self) -> Calibration:
-        return self._calibration
-
-    @calibration.setter
-    def calibration(self, calibration: int):
-        self._calibration = calibration
-
-    def flash_start(self):
+    def flash_start(self) -> None:
         if log.is_debug:
-            log.logger.debug("%s Running init confirmation", __file__)
-        tune.START_UP.play()
-        if log.is_debug:
-            log.logger.debug("%s Flash leds", __file__)
+            log.logger.debug("%s Flash start", __file__)
+        functions.flash_start(self._red_led, self._yellow_led, self._green_led)
 
-        self._red_led_control.state = 'flash'
-        self._red_led_control.reps = 2
-        self._red_led_control.on_time = .5
-        self._red_led_control.off_time = .5
-        self._yellow_led_control.state = 'flash'
-        self._yellow_led_control.reps = 2
-        self._yellow_led_control.on_time = .5
-        self._yellow_led_control.off_time = .5
-        self._green_led_control.state = 'flash'
-        self._green_led_control.reps = 2
-        self._green_led_control.on_time = .5
-        self._green_led_control.off_time = .5
-
-        self._red_led.control()
-        self._yellow_led.control()
-        self._green_led.control()
-
-    def calibrate(self):
+    def calibrate(self) -> None:
         if log.is_debug:
             log.logger.debug("%s Running calibrate method", __file__)
-        self.calibration.zero_current = functions.calibrate_current()
+        self._calibration.zero_current = functions.calibrate_current()
 
-    def connect_to_wifi(self):
+    def connect_to_wifi(self) -> None:
         """ Can throw runtime """
         global ssid
         global ip
         if log.is_debug:
             log.logger.debug("%s Running connect to wifi method", __file__)
-        ssid, ip = functions.connect_to_wifi()  # TODO save the return values - or not
+        ssid, ip = functions.connect_to_wifi()
 
-    def input_track(self):
-        """ Can throw runtime """
+    def input_track(self) -> None:
+        """ Captures the track details from buttons.
+            Can throw runtime """
         if log.is_debug:
             log.logger.debug("%s Running input track lane count", __file__)
-        lanes = functions.input_number(minimum=1, maximum=8)  # TODO save the return values - or not
-        self._track.number_of_lanes = lanes
-        my_lane = functions.input_number(minimum=1, maximum=lanes)
-        self._track.my_lane = my_lane
-        lane_colors = Track.TRACK_LANES[lanes]
-        self._track.my_lane_color = lane_colors[my_lane - 1]
+        self._track.number_of_lanes = functions.input_number(self._red_led, self._yellow_led,
+                                                             minimum=4, maximum=8)
+        if log.is_debug:
+            log.logger.debug("%s Running input my lane number for %s lane track",
+                             __file__, self._track.number_of_lanes)
+        self._track.my_lane = functions.input_number(self._red_led, self._yellow_led,
+                                                     minimum=1, maximum=self._track.number_of_lanes)
+        self._track.my_lane_color = Track.TRACK_LANES[self._track.number_of_lanes][self._track.my_lane - 1]
         if log.is_debug:
             log.logger.debug("%s track %s", __file__, self._track)
 
@@ -99,7 +73,7 @@ class StateMachine:
             log.logger.debug("%s Run web server", __file__)
             log.logger.debug("mem: %s", gc.mem_free())
         import webserver
-        webserver.run(self.calibration)
+        webserver.run(self._calibration)
 
     @property
     def states(self) -> list:
@@ -120,9 +94,15 @@ class StateMachine:
     def run(self):
         while True:
             if self.state < len(self.states):
-                x = self.states[self.state]
-                x(self)
+                fn = self.states[self.state]
+                fn(self)
                 self.state += 1
             else:
                 break
 
+    STATES = [flash_start,
+              calibrate,
+              connect_to_wifi,
+              input_track,
+              connect_to_wifi_as_me,
+              run_server]

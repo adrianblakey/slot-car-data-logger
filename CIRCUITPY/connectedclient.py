@@ -1,8 +1,7 @@
 import analogio
 import board
-from adafruit_httpserver import Server, Request, Response, FileResponse, MIMETypes, GET, JSONResponse, SSEResponse
-from time import monotonic, monotonic_ns, time, sleep
-
+from adafruit_httpserver import SSEResponse
+from time import monotonic, monotonic_ns
 import log
 from calibration import Calibration
 
@@ -43,7 +42,6 @@ class ConnectedClient:
 
     @property
     def ready(self):
-        # print("DEBUG - ready ", str(monotonic()), str(monotonic_ns()))
         return self._response and self._next_message < monotonic()
 
     @property

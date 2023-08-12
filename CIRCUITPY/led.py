@@ -39,7 +39,7 @@ class Led:
     def on_value(self, on_value: bool):
         self._on_value = on_value
 
-    def control(self):
+    def run(self):
         with digitalio.DigitalInOut(self._pin) as led:
             led.switch_to_output()
             if self.led_control.state == 'on':
@@ -59,5 +59,3 @@ class Led:
                     sleep(self.led_control.on_time)
                     led.value = not self.on_value
                     sleep(self.led_control.off_time)
-
-

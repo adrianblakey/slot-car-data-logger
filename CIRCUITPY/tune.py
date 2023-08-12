@@ -149,8 +149,6 @@ class Tune:
         self._tune = tune
 
     def play(self) -> None:
-        if log.is_debug:
-            log.logger.debug("Tune play")
         start: int = self._tune[0].tone
         interval: float = 60 / self._rate    # 60 bpm = 1 per sec
         with pwmio.PWMOut(board.GP21, duty_cycle=2 ** 15, frequency=start, variable_frequency=True) as tone:
