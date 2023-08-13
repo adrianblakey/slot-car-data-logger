@@ -1,3 +1,4 @@
+# Copyright @ 2023 Adrian Blakey, All rights reserved.
 
 import log
 

@@ -1,3 +1,4 @@
+# Copyright @ 2023 Adrian Blakey, All rights reserved.
 
 import os
 import log
@@ -11,9 +12,7 @@ from adafruit_debouncer import Debouncer
 import socketpool
 
 from led import Led
-from ledcontrol import LedControl
 from track import Track
-
 
 if log.is_debug:
     debug = True
@@ -112,11 +111,11 @@ def _capture_yellow(yellow_debouncer: Debouncer, minimum: int, maximum: int,
         if log.is_debug:
             log.logger.debug('%s yellow button released, elapse: %4.4f', __file__,
                              elapse)
-        if elapse <= .5:    # Short press < .5 sec, good count
+        if elapse <= .5:  # Short press < .5 sec, good count
             number += 1
             if log.is_debug:
                 log.logger.debug('%s Short press, count: %s', __file__, number)
-        else:               # Long press, leave if in range
+        else:  # Long press, leave if in range
             if log.is_debug:
                 log.logger.debug("%s Long press, count: %s leave with the number if >= min %s <= max %s", __file__,
                                  number, minimum, maximum)
@@ -128,7 +127,7 @@ def _capture_yellow(yellow_debouncer: Debouncer, minimum: int, maximum: int,
                 if number > maximum:
                     number = 0
                 __flash_led(red_led)
-                tune.HI_LO.play()          # Keep inputting, less than min
+                tune.HI_LO.play()  # Keep inputting, less than min
     else:
         pass
     return False, number, tick, start
@@ -157,7 +156,7 @@ def input_number(red_led: Led, yellow_led: Led,
                     if log.is_debug:
                         log.logger.debug('%s black button pressed', __file__)
                     tune.INPUT.play()
-                elif black_debouncer.rose:     # Go back/reset
+                elif black_debouncer.rose:  # Go back/reset
                     if log.is_debug:
                         log.logger.debug('%s black button released', __file__)
                     rc, number, tick, start = _capture_yellow(yellow_debouncer, minimum, maximum,
@@ -205,7 +204,8 @@ def _uniqueify_hostname(hostname: str, track: Track) -> str:
             return hostname
         else:
             if log.is_debug:
-                log.logger.debug('ip: %s does NOT match wifi ip: %s return hostname %s', ip, wifi.radio.ipv4_address, hostname)
+                log.logger.debug('ip: %s does NOT match wifi ip: %s return hostname %s', ip, wifi.radio.ipv4_address,
+                                 hostname)
         tokens = hostname.split("-")
         if len(tokens) > 1:
             color = tokens[1]
@@ -246,4 +246,3 @@ def connect_to_wifi_as_me(track: Track, ssid: str, password: str):
         if log.is_debug:
             log.logger.debug("%s Unable to connect with default credentials %s", __file__, e)
         raise RuntimeError('Unable to connect to WiFi with:', ssid, password)
-

@@ -16,9 +16,7 @@ Channels:
   GP28/ADC2 - Track incoming supply voltage
 
 TODO
-Configure from a track server to an http query
-Javascript in a file
-Use a different/better chart lib
+See the README.md
 
 """
 
@@ -35,20 +33,15 @@ else:
 
 def main():
     sm = StateMachine()
-    sm.run()            # Run the state machine - that's it
+    sm.run()  # Run the state machine - that's it
 
 
-print()                 # Stupid REPL id does not end with a \n
+print()  # Stupid REPL id does not end with a \n
 try:
-    if log.is_debug:
-        log.logger.debug("%s Run main", __file__)
+    log.logger.info("%s Run main", __file__)
     main()
 except Exception as e:
-    if log.is_debug:
-        log.logger.debug("%s Run main. Exception: %s", __file__, e)
-        log.logger.debug("%s Resetting mcu in 5 seconds", __file__)
+    log.logger.error("%s Run main. Exception: %s", __file__, e)
+    log.logger.error("%s Resetting mcu in 5 seconds", __file__)
     sleep(5)
     microcontroller.reset()
-
-
-

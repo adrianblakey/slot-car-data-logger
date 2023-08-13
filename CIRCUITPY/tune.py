@@ -1,8 +1,8 @@
+# Copyright @ 2023 Adrian Blakey, All rights reserved.
 
 from time import monotonic, monotonic_ns, time, sleep
 import board
 import pwmio
-import log
 
 
 # Approx Tone frequencies
@@ -96,14 +96,15 @@ CS8: int = 4435
 D8: int = 4699
 DS8: int = 4978
 
-QUARTER = 4    # Four beats per bar
-EIGHT = 8      # 8 beats ...
+QUARTER = 4  # Four beats per bar
+EIGHT = 8  # 8 beats ...
 SIXTEENTH = 16
 OCTAVE = 2
 
 
 class Note:
     """ Played note """
+
     def __init__(self, tone: int, duration: int = QUARTER) -> None:
         self._tone = tone
         self._duration = duration
@@ -127,6 +128,7 @@ class Note:
 
 class Tune:
     """ A series of played notes and their durations, played at a specific rate """
+
     def __init__(self, rate: int = 70, tune: list[Note] = []) -> None:
 
         self._rate: int = rate
@@ -150,7 +152,7 @@ class Tune:
 
     def play(self) -> None:
         start: int = self._tune[0].tone
-        interval: float = 60 / self._rate    # 60 bpm = 1 per sec
+        interval: float = 60 / self._rate  # 60 bpm = 1 per sec
         with pwmio.PWMOut(board.GP21, duty_cycle=2 ** 15, frequency=start, variable_frequency=True) as tone:
             for j in range(len(self._tune)):
                 if self._tune[j].tone != 0:
@@ -163,6 +165,7 @@ class Tune:
 
 class Sequence:
     """ A sequence of frequencies """
+
     def __init__(self, start: int = 200, interval: float = 1.0, increments: list[int] = [2], end: int = 1000) -> None:
         self._start: int = start
         self._interval: float = interval
@@ -204,6 +207,7 @@ class Sequence:
 
 class Sound:
     """ A sequence of frequencies """
+
     def __init__(self, interval: float = .1, sequencies: list[Sequence] = []) -> None:
         self._interval: float = interval
         self._sequencies: list[Sequence] = sequencies
@@ -220,8 +224,8 @@ class Sound:
 
 RISING = Sound(interval=0.2, sequencies=[Sequence()])
 
-HI_LO = Tune(rate=140, tune=[Note(C4), Note(C1)])    # Long press error
-INPUT = Tune(rate=160, tune=[Note(C5)])              # Button press
+HI_LO = Tune(rate=140, tune=[Note(C4), Note(C1)])  # Long press error
+INPUT = Tune(rate=160, tune=[Note(C5)])  # Button press
 FEEDBACK = Tune(rate=160, tune=[Note(G4), Note(0)])  # Confirms input
 LO_HI = Tune(rate=120, tune=[Note(C3), Note(C5)])
 REMINDER = Tune(rate=120, tune=[Note(F5), Note(0), Note(F5), Note(0), Note(F5), Note(0)])

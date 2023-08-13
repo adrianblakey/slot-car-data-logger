@@ -1,3 +1,5 @@
+# Copyright @ 2023 Adrian Blakey, All rights reserved.
+
 import board
 
 import log
@@ -8,7 +10,6 @@ from calibration import Calibration
 from track import Track
 
 import gc
-
 
 ssid = ''
 ip = ''
@@ -24,10 +25,10 @@ class StateMachine:
         self._red_led = Led(pin=board.GP17, led_control=self._red_led_control, on_value=False)
         self._yellow_led = Led(pin=board.GP18, led_control=self._yellow_led_control, on_value=False)
         self._green_led = Led(pin=board.LED, led_control=self._green_led_control, on_value=True)
-        self._calibration: Calibration = Calibration()     # Calibration settings
-        self._track: Track = Track()                       # Track we are on
-        self._states: list = StateMachine.STATES          # All possible states
-        self._state: int = 0                               # Starting state
+        self._calibration: Calibration = Calibration()  # Calibration settings
+        self._track: Track = Track()  # Track we are on
+        self._states: list = StateMachine.STATES  # All possible states
+        self._state: int = 0  # Starting state
 
     def flash_start(self) -> None:
         if log.is_debug:

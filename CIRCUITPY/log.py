@@ -1,6 +1,7 @@
+# Copyright @ 2023 Adrian Blakey, All rights reserved.
+
 import os
 import adafruit_logging as logging
-
 
 log_dict = {"DEBUG": logging.DEBUG,
             "INFO": logging.INFO,
@@ -8,7 +9,7 @@ log_dict = {"DEBUG": logging.DEBUG,
             "ERROR": logging.ERROR,
             "CRITICAL": logging.CRITICAL}
 
-loglevel = os.getenv("LOGLEVEL", "ERROR")   # Nothing set - then error log
+loglevel = os.getenv("LOGLEVEL", "ERROR")  # Nothing set - then error log
 logger = logging.getLogger(__file__)
 logger.setLevel(log_dict[loglevel])
 is_debug: bool = False
@@ -29,4 +30,3 @@ elif 40 == _level < 50:
     is_error = True
 elif 50 == _level < 60:
     is_critical = True
-

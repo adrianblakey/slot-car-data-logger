@@ -1,5 +1,4 @@
-
-
+# Copyright @ 2023 Adrian Blakey, All rights reserved.
 class Calibration:
     """ Drives the processing """
 

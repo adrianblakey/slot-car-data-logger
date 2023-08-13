@@ -1,3 +1,5 @@
+# Copyright @ 2023 Adrian Blakey, All rights reserved.
+
 import analogio
 import board
 from adafruit_httpserver import SSEResponse
@@ -5,7 +7,7 @@ from time import monotonic, monotonic_ns
 import log
 from calibration import Calibration
 
-SF: float = 17.966 / 3.3  # const
+SF: float = 17.966 / 3.3
 
 
 class ConnectedClient:
@@ -54,8 +56,6 @@ class ConnectedClient:
 
     def __scale(self, input_signal: float) -> float:
         """ Scale the current """
-        if log.is_debug:
-            log.logger.debug("input signal: %s", input_signal)
         return (input_signal - self.calibration.zero_current) / .025  # ~1.65 = 0 point, .025 = 1 amp
 
     def send_message(self):
@@ -67,10 +67,10 @@ class ConnectedClient:
                 analogio.AnalogIn(board.GP27) as cV, \
                 analogio.AnalogIn(board.GP28) as tV:
             # Track voltage, controller voltage, controller current
+            log.logger.debug("%s Track v: %d normal: %4.4f scaled: %4.4f",
+                             __file__,
+                             tV.value, (tV.value * 3.3) / 65536, ((tV.value * 3.3) / 65536) * SF)
             self._response.send_event(
                 f"{monotonic_ns()},{((tV.value * 3.3) / 65536) * SF},{((cV.value * 3.3) / 65536) * SF},{self.__scale((cI.value * 3.3) / 65536)},{mark}")
-        if log.is_debug:
-            log.logger.debug("send_message %s %s", monotonic(), monotonic_ns())
         self._next_message = monotonic() + .2
         # board_led.value = not board_led.value
-
