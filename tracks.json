@@ -1,0 +1,24 @@
+{
+	"tracks": [{
+			"name": "Castle",
+			"lanes": 5,
+			"colors": ["red", "yellow", "blue", "white", "black"],
+			"rotation": ["blue", "white", "black", "yellow", "red"],
+			"length": 110
+		},
+		{
+			"name": "Fylde",
+			"lanes": 4,
+			"colors": ["red", "green", "blue", "yellow"],
+			"rotation": ["blue", "yellow", "red", "green"],
+			"length": 110
+		},
+		{
+			"name": "Corby",
+			"lanes": 8,
+			"colors": ["red", "green", "blue", "white", "yellow", "orange", "purple", "black"],
+			"rotation": ["blue", "yellow", "red", "green"],
+			"length": 510
+		}
+	]
+}

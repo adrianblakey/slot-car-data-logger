@@ -1,0 +1,18 @@
+:root {
+    --color-white: #fff;
+    --color-dark-variant: #f3f5f8;
+    --border-radius-1: 0.4rem;
+  }
+  
+  * {
+    margin: 0;
+    padding: 0;
+    outline: 0;
+  }
+  
+  body {
+    width: 100vw;
+    height: 100vh;
+    overflow-x: hidden;
+    background: var(--color-dark-variant);
+  }
