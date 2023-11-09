@@ -1,3 +1,6 @@
+# Copyright @ 2023, Adrian Blakey. All rights reserved
+# Runs the microdot webserver
+
 from microdot_asyncio import Microdot, Response, send_file
 from microdot_utemplate import render_template
 from microdot_asyncio_websocket import with_websocket
@@ -40,3 +43,4 @@ def shutdown(request):
     request.app.shutdown()
     return 'The server is shutting down...'
    
+

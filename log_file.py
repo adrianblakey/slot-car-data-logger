@@ -1,19 +1,22 @@
-import time
+# Copyright @ 2023, Adrian Blakey. All rights reserved
+# Write a log of values as comma delim string
+# Checks every 1000 writes if the fs is too full and stops writing
 import os
 import logging
-    
+import time
 
 log = logging.getLogger("log_file")
 
-# Write a log of values as comma delim string
-# Checks every 1000 writes if the fs is too full and stops writing
 class Log_File():
     
-    def __init__(self):
+    def __init__(self, fname: str):
         self._prevent_write: bool = False
         self._ct: int = 0
-        (year, month, mday, hour, minute, second, weekday, yearday) = time.localtime()
-        self._fname = str(year) + '_' + str(month) + '_' + str(mday) + '_' + str(hour) + '_' + str(minute) + '_' + str(second) + '.log'
+        if fname is None:
+            (year, month, mday, hour, minute, second, weekday, yearday) = time.localtime()
+            self._fname = str(year) + '_' + str(month) + '_' + str(mday) + '_' + str(hour) + '_' + str(minute) + '_' + str(second) + '.log'
+        else:
+            self._fname = fname
         log.debug('Fname: %s', self._fname)
         self._file = open(self._fname, 'a')
         if self._fs_full():
@@ -48,8 +51,10 @@ class Log_File():
     def close(self):
         self._file.close()
 
-def test():
+
+if __name__ == "__main__":
     lfile = Log_File()
     for _ in range(2000):   # 10 secs
         lfile.log('12.00001, 12.00001, 12.00002')
     lfile.close()
+

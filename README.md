@@ -224,3 +224,15 @@ There is always more to do - however it's limited by the amount of memory. We ar
  8. Bluetooth configuration.
  9. Some refinement of the sounds to make it clear what state things are in. 
 
+### Use Case
+
+ 1. Turn up at a specific track 
+    How:
+      Prior to visit - power logger.
+      Add track by: downloadiong track or editing track database or using bluetooth app
+      Specify a specific track to use
+ 2. Plug in to a specific lane
+ 3. Intermittently run logger
+ 4. Change lane ...
+ 5. Review log data. Annotate data.
+ 6. Erase or archive log data

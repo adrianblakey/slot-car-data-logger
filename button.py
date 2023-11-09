@@ -1,3 +1,6 @@
+# Copyright @ 20023, Adrian Blakey. All rights reserved
+# Represents a button on the device
+
 from machine import Pin
 import logging
 
@@ -40,3 +43,5 @@ class Button(object):
                 self.callback(self.pin_number, Button.RELEASED)
             return
     
+
+

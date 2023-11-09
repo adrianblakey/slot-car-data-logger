@@ -1,3 +1,5 @@
+# Copyright @ 2023, Adrian Blakey. All rights reserved
+# Our leds
 from machine import Pin
 import logging
 
@@ -33,3 +35,5 @@ try:
 except NameError:
     log.info('red_led Not yet defined')
     red_led = Led(17)
+
+
