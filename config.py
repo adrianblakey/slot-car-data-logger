@@ -47,9 +47,9 @@ class Config():
         
     def __wifi(self) -> (iter, str):
         # Set up a search list of wifi configuration
-        all_files = os.listdir(self._prfx)
+        #all_files = os.listdir(self._prfx)
         wifi_config = [l for l in os.listdir(self._prfx) if l.startswith('wifi')]
-        log.debug('%s %s', all_files, wifi_config)
+        #log.debug('%s %s', all_files, wifi_config)
         if not wifi_config:
             log.info('No wifi*.json files found - assume no wifi ...')
             return None, None
@@ -104,6 +104,12 @@ class Config():
             json.dump(json_dict, f, separators=(',', ':'))    
 
 
+    def prfx(self) -> str:
+        if self._prfx == None:
+            self.__sd_card()
+        return self._prfx
+   
+   
     def more_wifi(self) -> bool:
         # More wifi configs or not
         return self._more_wifi

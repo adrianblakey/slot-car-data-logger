@@ -4,6 +4,7 @@ const CHART_COLORS = {
   yellow: "rgb(255, 205, 86)",
   green: "rgb(75, 192, 192)",
   blue: "rgb(54, 162, 235)",
+  thinblue: "rgb(54, 162, 235, 0.5)",
   purple: "rgb(153, 102, 255)",
   grey: "rgb(201, 203, 207)",
 };
@@ -14,6 +15,7 @@ const NAMED_COLORS = [
   CHART_COLORS.yellow,
   CHART_COLORS.green,
   CHART_COLORS.blue,
+  CHART_COLORS.thinblue,
   CHART_COLORS.purple,
   CHART_COLORS.grey,
 ];
@@ -32,90 +34,6 @@ function rand(min, max) {
   return min + (_seed / 233280) * (max - min);
 }
 
-var dataFirst = {
-  label: "Track Voltage",
-  data: [],
-  lineTension: 0,
-  fill: false,
-  borderColor: "red",
-  yAxisID: "y",
-};
-
-var dataSecond = {
-  label: "Controller Voltage",
-  data: [],
-  lineTension: 0,
-  fill: false,
-  borderColor: "blue",
-  yAxisID: "y",
-};
-
-var dataThird = {
-  label: "Controller Current",
-  data: [],
-  lineTension: 0,
-  fill: false,
-  borderColor: "green",
-  yAxisID: "y1",
-};
-
-var loggerData = {
-  datasets: [dataFirst, dataSecond, dataThird],
-};
-
-var chartOptions = {
-  responsive: true,
-  legend: {
-    display: true,
-    position: "top",
-    labels: {
-      boxWidth: 80,
-      fontColor: "black",
-    },
-  },
-  stacked: false,
-  plugins: {
-    title: {
-      display: true,
-      text: "Slot Car Data Logger",
-    },
-  },
-  scales: {
-    x: {
-      type: "realtime",
-      realtime: {
-        ttl: 60000,
-        duration: 20000,
-      },
-      y: {
-        title: {
-          display: true,
-          text: "Voltage",
-        },
-        type: "linear",
-        display: true,
-        position: "left",
-      },
-      y1: {
-        title: {
-          display: true,
-          text: "Current",
-        },
-        type: "linear",
-        display: true,
-        position: "right",
-        // grid line settings
-        grid: {
-          drawOnChartArea: false, // grid lines for one axis to show up
-        },
-      },
-    },
-    interaction: {
-      intersect: false,
-    },
-  },
-};
-
 const data = {
   datasets: [
     {
@@ -126,27 +44,30 @@ const data = {
       fill: false,
       data: [],
       yAxisID: "y",
-      pointRadius: 1,
+      pointRadius: 0,
+      order: 3,
     },
     {
       label: "Controller Voltage",
-      backgroundColor: CHART_COLORS.blue,
-      borderColor: CHART_COLORS.blue,
+      backgroundColor: CHART_COLORS.thinblue,
+      borderColor: CHART_COLORS.thinblue,
       lineTension: 0,
       fill: true,
       yAxisID: "y",
       data: [],
-      pointRadius: 1,
+      pointRadius: 0,
+      order: 1,
     },
     {
       label: "Controller Current",
-      backgroundColor: CHART_COLORS.green,
-      borderColor: CHART_COLORS.green,
+      backgroundColor: CHART_COLORS.orange,
+      borderColor: CHART_COLORS.orange,
       lineTension: 0,
       fill: false,
       yAxisID: "y1",
       data: [],
-      pointRadius: 1,
+      pointRadius: 0,
+      order: 2,
     },
   ],
 };
@@ -156,11 +77,11 @@ const annotation1 = {
   borderColor: "black",
   borderWidth: 5,
   click: function ({ chart, element }) {
-    console.log("Line annotation clicked");
+    // console.log("Line annotation clicked");
   },
   label: {
     backgroundColor: "red",
-    content: "Test Label",
+    content: "Label",
     display: true,
   },
   scaleID: "y",
@@ -172,7 +93,7 @@ const annotation2 = {
   borderColor: "rgb(101, 33, 171)",
   borderWidth: 1,
   click: function ({ chart, element }) {
-    console.log("Box annotation clicked");
+    // console.log("Box annotation clicked");
   },
   drawTime: "beforeDatasetsDraw",
   xMax: "April",
@@ -204,12 +125,17 @@ const config = {
         display: true,
         text: "Slot car data logger",
       },
+      streaming: {
+        duration: 2000,
+        refresh: 1000,
+        frameRate: 40,
+      },
     },
     scales: {
       x: {
         type: "realtime",
         realtime: {
-          //         duration: 20000,
+          // delay: 20,
           //         refresh: 1000,
           //         delay: 2000,
           //         onRefresh: onRefresh,
@@ -234,8 +160,9 @@ const config = {
           display: true,
           text: "Current",
         },
-        suggestedMin: -10,
-        suggestedMax: 18,
+        // TODO The current can go very high on start and settles back - rescale it?
+        suggestedMin: -5,
+        suggestedMax: 15,
         // grid line settings
         grid: {
           drawOnChartArea: false, // grid lines for one axis to show up
@@ -248,11 +175,6 @@ const config = {
   },
 };
 
-//const theChart = new Chart(document.getElementById("theChart"), {
-// type: "line",
-// data: loggerData,
-// options: chartOptions,
-//});
 
 const theChart = new Chart(document.getElementById("theChart"), config);
 
@@ -266,23 +188,23 @@ function onLoad() {
 }
 
 function initializeSocket() {
-  console.log("Opening WebSocket connection MicroPython Server...");
+  // console.log("Opening WebSocket connection MicroPython Server...");
   websocket = new WebSocket(targetUrl);
   websocket.onopen = onOpen;
   websocket.onclose = onClose;
   websocket.onmessage = onMessage;
 }
 function onOpen(event) {
-  console.log("Starting connection to WebSocket server..");
+  // console.log("Starting connection to WebSocket server..");
 }
 function onClose(event) {
-  console.log("Closing connection to server..");
+  // console.log("Closing connection to server..");
   setTimeout(initializeSocket, 2000);
 }
 function onMessage(event) {
   let tok = event.data.split(",");
   // tv, cv, ci
-  console.log("Update values", tok[0], tok[1], tok[2]);
+  // console.log("Update values", tok[0], tok[1], tok[2]);
   const now = Date.now();
   theChart.data.datasets[0].data.push({
     x: now,
@@ -308,3 +230,5 @@ function updateValues(data) {
   if (sensorData.length > 20) sensorData.pop();
   sensorValues.value = sensorData.join("\r\n");
 }
+
+

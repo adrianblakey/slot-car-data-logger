@@ -20,15 +20,21 @@ import microdot_websocket
 
 import time
 import logging
+from buzzer import Buzzer, the_buzzer
+
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger("main")
 log.info('Starting main')
 
+from context import Context, the_context
 from config import Config
+
 
 the_config = Config()
 the_config.read_profiles()
-log.info(the_config)
+log.info('The config object %s', the_config)
+
+the_context.put('config', the_config)
 
 from connection import Connection
 from device import Device, the_device
@@ -37,25 +43,30 @@ from led import Led, yellow_led, red_led
 from logging_state import Logging_State
 from log_file import Log_File 
 
+yellow_logging_state = Logging_State(the_config)  # logging state obj - intially off    
+yellow_button = Button(22, False, yellow_logging_state.yellow_callback)
+black_logging_state = Logging_State(the_config)  # logging state obj - intially off
+black_button = Button(16, False, black_logging_state.black_callback)
+
 the_connection = Connection()
 if the_connection.connected():
     log.debug('Import a webserver')
-    from webserver import server
+    from webserver import server, the_foo
+    the_foo.set_state(black_logging_state)
 else:
     log.debug('No network - no webserver')
-
-logging_state = Logging_State()  # logging state obj - intially off    
-yellow_button = Button(22, False, logging_state.callback)
-
 
 _LOGGER_UUID = bluetooth.UUID('B1190EF7-176F-4B32-A715-89B3425A4076') # Custom service vendor-specific UUID
 _LOGGER_PROFILE_SEND_UUID = bluetooth.UUID('B1190EF8-176F-4B32-A715-89B3425A4076')  # Transmit data
 _LOGGER_PROFILE_RECV_UUID = bluetooth.UUID('B1190EF9-176F-4B32-A715-89B3425A4076')  # Receive data
+
+# Device service uuids
 _DEVICE_UUID = bluetooth.UUID(0x180A)
 _DEVICE_MFG_NAME_STR = bluetooth.UUID(0x2A29)
 _DEVICE_SER_NUM_STR = bluetooth.UUID(0x2A25)
 _DEVICE_FW_REV_STR = bluetooth.UUID(0x2A26)
 _DEVICE_SW_REV_STR = bluetooth.UUID(0x2A28)
+
 _ADV_APPEARANCE_LOGGER = const(128) # generic computer org.bluetooth.characteristic.gap.appearance.xml 
 
 _ADV_INTERVAL_MS = 250_000
@@ -67,7 +78,7 @@ device_information_service = aioble.Service(_DEVICE_UUID)
 profile_send_characteristic = aioble.Characteristic(logger_service, _LOGGER_PROFILE_SEND_UUID, read=True, notify=True)
 profile_recv_characteristic = aioble.Characteristic(logger_service, _LOGGER_PROFILE_RECV_UUID, write=True, read=True, notify=True, capture=True, indicate=True)
 
-
+# Device characteristics
 device_send_mfg = aioble.Characteristic(device_information_service, _DEVICE_MFG_NAME_STR, read=True)
 device_send_ser = aioble.Characteristic(device_information_service, _DEVICE_SER_NUM_STR, read=True)
 device_send_fw = aioble.Characteristic(device_information_service, _DEVICE_FW_REV_STR, read=True)
@@ -93,28 +104,24 @@ async def peripheral_task():
 
 # Helper to encode the profile id (sint16, profile index number).
 def _encode_profile(id: int):
-    log.debug("Encode profile %s", id)
     return struct.pack("<h", int(id))
 
 
 async def send_my_device_task():
-    # Send my device characteristic
+    # Send my bt device characteristic
+    log.debug("Send device on bt")
     while True:
         device_send_mfg.write(struct.pack("<42s", "Adrian's And Richard's Technologies (AART)"))
         device_send_ser.write(struct.pack("<30s", the_config.my_id()))
         device_send_fw.write(struct.pack("<40s", sys.version))
         device_send_sw.write(struct.pack("<30s", 'Slot Car Logger; V1.0alpha'))
-        await asyncio.sleep_ms(5000)
+        await asyncio.sleep_ms(20000)
 
 
 # Periodically poll the bt profile config and send it
 async def profile_task():
     while True:
         profile_send_characteristic.write(_encode_profile(the_config.get_profile().id()))
-        #device_send_mfg.write(struct.pack("<4s", 'AART'))
-        #device_send_ser.write(struct.pack("<30s", the_config.my_id()))
-        #device_send_fw.write(struct.pack("<40s", sys.version))
-        #device_send_sw.write(struct.pack("<30s", 'Slot Car Logger; V1.0alpha'))
         await asyncio.sleep_ms(5000)
 
 
@@ -151,13 +158,19 @@ async def yellow_button_task():
         yellow_button.update()
         await asyncio.sleep_ms(200)
         
-  
+# Playback/realtime start/stop - check every 200mSecs
+async def black_button_task():
+    while True:
+        black_button.update()
+        await asyncio.sleep_ms(200)
+        
+        
 # Read the device, log to disk 
 async def log_data_task():
     while True:
-        if logging_state.on():
-            logging_state.get_file().log(the_device.read_all())
-        await asyncio.sleep_ms(100)    
+        if yellow_logging_state.on():
+            yellow_logging_state.get_file().log(the_device.read_all())
+        await asyncio.sleep_ms(10)                # log every 10 ms  
             
              
 async def main():
@@ -169,6 +182,7 @@ async def main():
     tasks.append(asyncio.create_task(profile_task()))
     tasks.append(asyncio.create_task(receive_task()))
     tasks.append(asyncio.create_task(yellow_button_task()))
+    tasks.append(asyncio.create_task(black_button_task()))
     tasks.append(asyncio.create_task(log_data_task()))
     tasks.append(asyncio.create_task(send_my_device_task()))
     res = await asyncio.gather(*tasks)

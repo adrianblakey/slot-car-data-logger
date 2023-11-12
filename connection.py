@@ -19,7 +19,7 @@ class Connection():
         self._password = None
         self._retries = retries
         self._debug = debug
-        self._connected = False
+        self._connected = None
         
         
     def set_ids(self, ssid: str, password: str):
@@ -49,14 +49,18 @@ class Connection():
 
 
     def connected(self):
+        if self._connected == None:
+            self.test()
         return self._connected
     
     def test(self):
         log.debug("Test connection")
         try:
             addr = socket.getaddrinfo('www.google.com', 443)[0][-1]
+            self._connected = True
             log.debug("Ping addr OK" + str(addr))
         except OSError as err:
+            self._connected = False
             log.debug("No network connection " + str(err.errno))
             if err.errno == errno.ENXIO: #  no network available
                 log.debug("No network connection")
