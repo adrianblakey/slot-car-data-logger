@@ -5,14 +5,16 @@ from machine import ADC, Pin
 import logging
 import time
 import random
+import math
 
 global the_device   # imported into main
 
 log = logging.getLogger("device")
 
-SF: float = 17.966 / 3.3   # Current scaling
+SF: float = 17.966 / 3.3   # Scaling
 CF: float = 3.3 / 65536    # Conversion factor
 
+divisor: int = 4
 
 class Device():
     
@@ -21,7 +23,8 @@ class Device():
         self._adc0 = ADC(Pin(26))
         self._adc1 = ADC(Pin(27))
         self._adc2 = ADC(Pin(28))
-        # Pin 29 our voltage
+        self._adc_filtered: float = 0
+        # Pin 29 our supply voltage
         
     def calibrate_current(self) -> None:
         # Measure the current 10 times and average
@@ -33,16 +36,23 @@ class Device():
         self._zero_current = count / 10
         log.debug('Calibrated current raw u_16 value %s', self._zero_current)
 
+    def filter(self, value: float) -> float:
+        self._adc_filtered = self._adc_filtered + value - (self._adc_filtered / divisor)
+        return self._adc_filtered / divisor
+        
     def __current(self) -> float:
         # Scale the current
         return (self._adc0.read_u16() - self._zero_current) * CF / .025  # ~1.65 = 0 point, .025 = 1 amp
     
     def read_all(self) -> str:
-        cv = self._adc1.read_u16() * CF * SF
-        tv = self._adc2.read_u16() * CF * SF
-        return f"{tv:.6f},{cv:.6f},{self.__current():.6f}"
+        #cv = self._adc1.read_u16() * CF * SF
+        #tv = self._adc2.read_u16() * CF * SF
+        nt = str(time.time_ns())
+        #s = nt[:-6]
+        #log.debug('Nano time %s round %s', nt, s)
+        return f"{nt[:-6]},{self._adc2.read_u16() * CF * SF:.6f},{self._adc1.read_u16() * CF * SF:.6f},{self.__current():.6f}"
         
-       
+
 try:
     the_device
 except NameError:

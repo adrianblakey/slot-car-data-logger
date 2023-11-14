@@ -20,7 +20,6 @@ import microdot_websocket
 
 import time
 import logging
-from buzzer import Buzzer, the_buzzer
 
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger("main")
@@ -56,36 +55,50 @@ if the_connection.connected():
 else:
     log.debug('No network - no webserver')
 
-_LOGGER_UUID = bluetooth.UUID('B1190EF7-176F-4B32-A715-89B3425A4076') # Custom service vendor-specific UUID
-_LOGGER_PROFILE_SEND_UUID = bluetooth.UUID('B1190EF8-176F-4B32-A715-89B3425A4076')  # Transmit data
-_LOGGER_PROFILE_RECV_UUID = bluetooth.UUID('B1190EF9-176F-4B32-A715-89B3425A4076')  # Receive data
-
-# Device service uuids
-_DEVICE_UUID = bluetooth.UUID(0x180A)
+# Device service uuids std.
+_DEVICE_SVC_UUID = bluetooth.UUID(0x180A)
 _DEVICE_MFG_NAME_STR = bluetooth.UUID(0x2A29)
 _DEVICE_SER_NUM_STR = bluetooth.UUID(0x2A25)
 _DEVICE_FW_REV_STR = bluetooth.UUID(0x2A26)
 _DEVICE_SW_REV_STR = bluetooth.UUID(0x2A28)
-
-_ADV_APPEARANCE_LOGGER = const(128) # generic computer org.bluetooth.characteristic.gap.appearance.xml 
-
-_ADV_INTERVAL_MS = 250_000
-
-# Register GATT server.
-logger_service = aioble.Service(_LOGGER_UUID)
-device_information_service = aioble.Service(_DEVICE_UUID)
-
-profile_send_characteristic = aioble.Characteristic(logger_service, _LOGGER_PROFILE_SEND_UUID, read=True, notify=True)
-profile_recv_characteristic = aioble.Characteristic(logger_service, _LOGGER_PROFILE_RECV_UUID, write=True, read=True, notify=True, capture=True, indicate=True)
-
+# Device information service
+device_information_service = aioble.Service(_DEVICE_SVC_UUID) 
 # Device characteristics
 device_send_mfg = aioble.Characteristic(device_information_service, _DEVICE_MFG_NAME_STR, read=True)
 device_send_ser = aioble.Characteristic(device_information_service, _DEVICE_SER_NUM_STR, read=True)
 device_send_fw = aioble.Characteristic(device_information_service, _DEVICE_FW_REV_STR, read=True)
 device_send_sw = aioble.Characteristic(device_information_service, _DEVICE_SW_REV_STR, read=True)
 
-aioble.register_services(logger_service, device_information_service)
+# Profile service uuids
+_PROFILE_SVC_UUID = bluetooth.UUID('ed0dfe6c-6957-4a59-9a9a-2c527cfe5a49')   # Custom profile service vendor-specific UUID
+_PROFILE_ID_STR = bluetooth.UUID('ed0dfe6d-6957-4a59-9a9a-2c527cfe5a49')     # Send/recv data
+_PROFILE_ERR_STR = bluetooth.UUID('ed0dfe6e-6957-4a59-9a9a-2c527cfe5a49')
+# Profile service
+profile_service = aioble.Service(_PROFILE_SVC_UUID)           
+# Profile characteristics
+profile_id_char = aioble.Characteristic(profile_service, _PROFILE_ID_STR, write=True, read=True, notify=True, capture=True, indicate=True)
+profile_err_char = aioble.Characteristic(profile_service, _PROFILE_ERR_STR, read=True, notify=True)
 
+"""
+# Logger service uuids
+_LOGGER_SVC_UUID = bluetooth.UUID('B1190EFA-176F-4B32-A715-89B3425A4076')   # Custom profile service vendor-specific UUID
+_LOGGER_DT = bluetooth.UUID('B1190EFB-176F-4B32-A715-89B3425A4076')
+_LOGGER_TV = bluetooth.UUID('B1190EFC-176F-4B32-A715-89B3425A4076')
+_LOGGER_CV = bluetooth.UUID('B1190EFD-176F-4B32-A715-89B3425A4076')
+_LOGGER_CI = bluetooth.UUID('B1190EFE-176F-4B32-A715-89B3425A4076')
+# Logger service
+logger_service = aioble.Service(_LOGGER_SVC_UUID)  
+logger_dt = aioble.Characteristic(logger_service, _LOGGER_DT, read=True, notify=True)
+logger_tv = aioble.Characteristic(logger_service, _LOGGER_TV, read=True, notify=True)
+logger_cv = aioble.Characteristic(logger_service, _LOGGER_CV, read=True, notify=True)
+logger_ci = aioble.Characteristic(logger_service, _LOGGER_CI, read=True, notify=True)
+"""
+
+_ADV_APPEARANCE_LOGGER = const(128) # generic computer org.bluetooth.characteristic.gap.appearance.xml 
+_ADV_INTERVAL_MS = 250_000  # 259k
+
+#aioble.register_services(device_information_service, profile_service, logger_service)
+aioble.register_services(device_information_service, profile_service)
 
 # Serially wait for connections. Don't advertise while a central is
 # connected.
@@ -94,7 +107,7 @@ async def peripheral_task():
         async with await aioble.advertise(
             _ADV_INTERVAL_MS,
             name="Slot Car Logger " + the_config.my_id()[0:8], 
-            services=[_LOGGER_UUID, _DEVICE_UUID],
+            services=[ _DEVICE_SVC_UUID, _PROFILE_SVC_UUID], # _LOGGER_SVC_UUID
             appearance=_ADV_APPEARANCE_LOGGER
         ) as connection:
             log.debug("Connection from %s", connection.device)
@@ -117,29 +130,36 @@ async def send_my_device_task():
         device_send_sw.write(struct.pack("<30s", 'Slot Car Logger; V1.0alpha'))
         await asyncio.sleep_ms(20000)
 
+"""
+async def logger_task():
+    # Send device data
+    while True:
+        profile_id.write(_encode_profile(the_config.get_profile().id()))
+        await asyncio.sleep_ms(5000)
+"""
 
-# Periodically poll the bt profile config and send it
 async def profile_task():
     while True:
-        profile_send_characteristic.write(_encode_profile(the_config.get_profile().id()))
-        await asyncio.sleep_ms(5000)
-
-
-async def receive_task():
-    while True:
-        connection, data = await profile_recv_characteristic.written()
-        profile_id = int.from_bytes(data, 'little')
-        #unp = struct.unpack("<h", data)
+        connection, data = await profile_id_char.written()
         log.debug("Received connection from %s", connection.device)
-        log.debug("Received data %s", str(profile_id))
-        id = the_config.get_profile().id()
+        profile_id_int = int.from_bytes(data, 'little')
+        #unp = struct.unpack("<h", data)
+        log.debug("Received data %s", str(profile_id_int))
         try:
-            the_config.use_id(profile_id)
-            id = profile_id
+            profile = the_config.get_profile() # throws
+            id: int = profile.id()
+            the_config.use_id(profile_id_int)
+            id = profile_id_int # no excp - overwrite
+            profile_err_char.write(struct.pack("<1s", " "))
+            profile_err_char.write(struct.pack("<50s", "Id: " + str(profile_id_int) +
+                                               " Tr: " + profile.track() +
+                                               " Ln: " + profile.lane() ))
         except ValueError as ex:
             log.debug('Not a profile id %s', ex)
-        profile_recv_characteristic.write(_encode_profile(id))
-        profile_recv_characteristic.notify(connection)
+            profile_err_char.write(struct.pack("<30s", "Unusable id. " + str(profile_id_int)))
+        profile_id_char.write(struct.pack("<h", int(id))) # write a good val back
+        profile_id_char.notify(connection)
+        profile_err_char.notify(connection)
         await asyncio.sleep(1)
 
 
@@ -180,14 +200,14 @@ async def main():
         tasks.append(asyncio.create_task(server.start_server(host='0.0.0.0', port=80, debug=True, ssl=None)))
     tasks.append(asyncio.create_task(peripheral_task()))
     tasks.append(asyncio.create_task(profile_task()))
-    tasks.append(asyncio.create_task(receive_task()))
+    #tasks.append(asyncio.create_task(logger_task()))
     tasks.append(asyncio.create_task(yellow_button_task()))
     tasks.append(asyncio.create_task(black_button_task()))
     tasks.append(asyncio.create_task(log_data_task()))
     tasks.append(asyncio.create_task(send_my_device_task()))
+    from buzzer import Buzzer, the_buzzer  # Play here
     res = await asyncio.gather(*tasks)
-
-    
+   
 try:
     asyncio.run(main())
 finally:

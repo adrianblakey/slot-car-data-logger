@@ -1,7 +1,7 @@
 # Copyright @ 20023, Adrian Blakey. All rights reserved
 # The pushme/pullme buzzer on pins 20/21
 
-from machine import Pin, PWM
+from machine import Pin, PWM, mem32
 from utime import sleep
 import logging
 
@@ -99,26 +99,27 @@ tones = {
 "DS8": 4978
 }
 
+
 global the_buzzer
 class Buzzer():
     def __init__(self):
-        p20 = Pin(20, Pin.OUT)
-        p21 = Pin(21, Pin.OUT)
-        p20.high()
-        p21.low()
-        self._buzzerUp = PWM(Pin(21))
-        self._buzzerDown = PWM(Pin(20))
-        self._buzzerUp.duty_u16(2 ** 15)
-        self._buzzerDown.duty_u16(0)
-
+        self._cha = PWM(Pin(20), duty_u16=32768, freq=1000)
+        self._chb = PWM(Pin(21), duty_u16=32768)
+        # Set PWM frequency to 1 kHz.
+        # I'll be the same for both channels.
+        # Set duty to 50% on both channels.
+        # Both channels must have same duty cycle for this to work.
+        # From 4.5.2 in https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf
+        # 20/21 are PWM2A and PWM2B
+        # Invert output B on slice 2 - GP21.
+        mem32[0x40050000 + 0x14 * 2 + 0x2000] = 1 << 3 # invert=True causes a 'flutter'
+        
     def playtone(self, freq):
-        self._buzzerUp.freq(freq)
-        self._buzzerDown.freq(freq)
+        self._cha.freq(freq)
+        mem32[0x40050000 + 0x14 * 2 + 0x2000] = 1 << 3
         
     def bequiet(self):
-        #self._buzzerUp.duty_u16(0)
-        #self._buzzerDown.duty_u16(0)
-        pass
+        self._cha.freq(10)
         
     def playsong(self, mysong):
         for i in range(len(mysong)):
@@ -127,8 +128,8 @@ class Buzzer():
             else:
                 self.playtone(tones[mysong[i]])
             sleep(0.3)
-        self._buzzerUp.deinit()
-        self._buzzerDown.deinit()
+        self._cha.deinit()
+        self._chb.deinit()
            
 try:
     the_buzzer

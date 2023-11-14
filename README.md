@@ -1,10 +1,11 @@
 # Slot Car Data Logger
 
-Circuit python code to run the data logger device.
+This repo contains the design and firmware of a slot car data logger. This is a device that should be of interest to serious slot 
+car racers who are interested in gaining greater insight into their own performance and the performance of their car(s) and controller(s). It does this by measuring the volatge and current over time and saves and graphs the values.
 
-This code runs a Pi Pico W that runs a (flat track) slot car data logger. The data logger device comprises a circuit that
-measures positive and negative voltage and current, and normalizes this to a 0 - 3.3v signal for input to the Pi Pico 
-on its 3 ADC inputs.
+The data logger device comprises a voltage and currrent measuring circuit that provides signals to a Raspberry Pi Pico W. These three signals are fed to 3 of the Pi Pico analog to digital (ADC) inputs on pins 26, 27 and 28. Micropython code running on the Pi reads these values and writes them to disk, bluetooth and the Web on a WiFi connection. 
+
+TThe voltages are the track voltage - usually a fairly constant 12+ vDC, and the variable controller output voltages (sent to the car). The current is the flow to the car when it is driving forward and from the car under braking (usually quite small).
 
 The device passively intermediates between a slot car track and the controller and collects data about varying controller 
 current and voltage and the (conventionally fixed at ~12vDC) track voltage in real time from a slot car controller 
