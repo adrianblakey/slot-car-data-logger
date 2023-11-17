@@ -47,8 +47,10 @@ yellow_button = Button(22, False, yellow_logging_state.yellow_callback)
 black_logging_state = Logging_State(the_config)  # logging state obj - intially off
 black_button = Button(16, False, black_logging_state.black_callback)
 
-the_connection = Connection()
+ip_address: str = None
+the_connection: Connection = Connection()
 if the_connection.connected():
+    ip_address = the_connection.ip()
     log.debug('Import a webserver')
     from webserver import server, the_foo
     the_foo.set_state(black_logging_state)
@@ -126,7 +128,7 @@ async def send_my_device_task():
     while True:
         device_send_mfg.write(struct.pack("<42s", "Adrian's And Richard's Technologies (AART)"))
         device_send_ser.write(struct.pack("<30s", the_config.my_id()))
-        device_send_fw.write(struct.pack("<40s", sys.version))
+        device_send_fw.write(struct.pack("<50s", ip_address + ' ' + sys.version))
         device_send_sw.write(struct.pack("<30s", 'Slot Car Logger; V1.0alpha'))
         await asyncio.sleep_ms(20000)
 

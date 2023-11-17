@@ -18,7 +18,6 @@ class Connection():
         self._ssid = None
         self._password = None
         self._retries = retries
-        self._debug = debug
         self._connected = None
         
         
@@ -45,9 +44,11 @@ class Connection():
             self._connected = False
         else:
             self._connected = True
-            log.debug('Connected. IP Address: %S', wlan.ifconfig()[0])
+            log.info('Connected. IP Address: %s', wlan.ifconfig()[0])
 
-
+    def ip(self) -> str:
+        return network.WLAN(network.STA_IF).ifconfig()[0]
+    
     def connected(self):
         if self._connected == None:
             self.test()
@@ -58,12 +59,12 @@ class Connection():
         try:
             addr = socket.getaddrinfo('www.google.com', 443)[0][-1]
             self._connected = True
-            log.debug("Ping addr OK" + str(addr))
+            log.info("Ping addr OK" + str(addr))
         except OSError as err:
             self._connected = False
             log.debug("No network connection " + str(err.errno))
             if err.errno == errno.ENXIO: #  no network available
-                log.debug("No network connection")
+                log.info("No network connection")
 
 
 if __name__ == "__main__":
