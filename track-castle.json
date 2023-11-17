@@ -1,0 +1,99 @@
+{
+    "name": "Castle Raceway",
+    "address": "Rhuddlan, Rhyl LL18 5UZ",
+    "geo": {
+        "lat": 53.2890218,
+        "long": -3.4798256
+    },
+    "lanes": [
+        "red",
+        "yellow",
+        "white",
+        "blue",
+        "black"
+    ],
+    "rotations": [
+        "red white",
+        "yellow blue",
+        "white black",
+        "blue yellow",
+        "black blue"
+    ],
+    "direction": "clockwise",
+    "laneseparation": 10.5,
+    "records": [
+        {
+            "class": {
+                "name": "es32",
+                "datestamp": "2021-111-11:8:0:0",
+                "owner": "Terry",
+                "time": "4.2"
+            }
+        }
+    ],
+    "lanelengths": [
+        44.5,
+        44.5,
+        44.5,
+        44.5,
+        44.5
+    ],
+    "segments": [
+        {
+            "type": "s",
+            "id": 1
+        },
+        {
+            "type": "c",
+            "id": 1
+        }
+    ],
+    "straights": [
+        {
+            "id": 1,
+            "length": 4.3
+        },
+        {
+            "id": 2,
+            "length": 2
+        }
+    ],
+    "curves": [
+        {
+            "id": 1,
+            "radii": [
+                4.3,
+                4.5,
+                4.6,
+                4.7,
+                4.8
+            ],
+            "arc": 120,
+            "lengths": [
+                1,
+                2,
+                3,
+                4,
+                5
+            ]
+        },
+        {
+            "id": 2,
+            "radii": [
+                4.3,
+                4.5,
+                4.6,
+                4.7,
+                4.8
+            ],
+            "arc": 120,
+            "lengths": [
+                1,
+                2,
+                3,
+                4,
+                5
+            ]
+        }
+    ]
+}
