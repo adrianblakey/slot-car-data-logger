@@ -108,6 +108,7 @@ const config = {
   type: "line",
   data: data,
   options: {
+    spanGaps: true,
     responsive: true,
     interaction: {
       mode: "index",
@@ -126,20 +127,18 @@ const config = {
         text: "Slot car data logger",
       },
       streaming: {
-        duration: 2000,
-        refresh: 1000,
-        frameRate: 40,
+        duration: 10000, // 10 sec - 2 laps to compare
+        refresh: 10,
+        frameRate: 60,
+        delay: 0,
       },
     },
     scales: {
       x: {
         type: "realtime",
-        realtime: {
-          // delay: 20,
-          //         refresh: 1000,
-          //         delay: 2000,
-          //         onRefresh: onRefresh,
-        },
+        ticks: {
+     
+        }
       },
       y: {
         type: "linear",
@@ -161,7 +160,7 @@ const config = {
           text: "Current",
         },
         // TODO The current can go very high on start and settles back - rescale it?
-        suggestedMin: -5,
+        suggestedMin: -2,
         suggestedMax: 15,
         // grid line settings
         grid: {
@@ -175,10 +174,7 @@ const config = {
   },
 };
 
-
 const theChart = new Chart(document.getElementById("theChart"), config);
-
-// WebSocket support
 var targetUrl = `ws://${location.host}/ws`;
 var websocket;
 window.addEventListener("load", onLoad);
@@ -204,8 +200,9 @@ function onClose(event) {
 function onMessage(event) {
   let tok = event.data.split(",");
   // tv, cv, ci
-  // console.log("Update values", tok[0], tok[1], tok[2]);
+  console.log("Update values", tok[0], tok[1], tok[2]);
   const now = Date.now();
+  //console.log(now, ts)
   theChart.data.datasets[0].data.push({
     x: now,
     y: parseFloat(tok[0]),

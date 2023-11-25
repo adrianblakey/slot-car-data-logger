@@ -19,81 +19,55 @@
         "blue yellow",
         "black blue"
     ],
-    "direction": "clockwise",
+    "direction": "acw",
     "laneseparation": 10.5,
     "records": [
         {
             "class": {
                 "name": "es32",
                 "datestamp": "2021-111-11:8:0:0",
-                "owner": "Terry",
+                "owner": "Terry G",
                 "time": "4.2"
             }
         }
     ],
-    "lanelengths": [
-        44.5,
-        44.5,
-        44.5,
-        44.5,
-        44.5
-    ],
+    "length": 10.5,
     "segments": [
         {
-            "type": "s",
             "id": 1
+            "interval": 9,
+            "acum": "9",
+            "tulip": "0->",
         },
         {
-            "type": "c",
-            "id": 1
-        }
-    ],
-    "straights": [
-        {
-            "id": 1,
-            "length": 4.3
+            "id": 2
+            "interval": 4,
+            "acum": "13",
+            "tulip": "0u>",
         },
         {
-            "id": 2,
-            "length": 2
-        }
-    ],
-    "curves": [
-        {
-            "id": 1,
-            "radii": [
-                4.3,
-                4.5,
-                4.6,
-                4.7,
-                4.8
-            ],
-            "arc": 120,
-            "lengths": [
-                1,
-                2,
-                3,
-                4,
-                5
-            ]
+            "id": 3
+            "interval": 1,
+            "cum": "14",
+            "tulip": "0->",
         },
         {
-            "id": 2,
-            "radii": [
-                4.3,
-                4.5,
-                4.6,
-                4.7,
-                4.8
-            ],
-            "arc": 120,
-            "lengths": [
-                1,
-                2,
-                3,
-                4,
-                5
-            ]
-        }
+            "id": 4
+            "interval": 2,
+            "cum": "16",
+            "tulip": "0u>",
+        },
+        {
+            "id": 5
+            "interval": 7,
+            "cum": "23",
+            "tulip": "0->",
+        },
+        {
+            "id": 6
+            "interval": 2,
+            "cum": "29",
+            "tulip": "0n>",
+        },
     ]
 }

@@ -134,7 +134,7 @@ class Buzzer():
 try:
     the_buzzer
 except NameError:
-    log.info('the_buzzer not yet defined')
+    log.debug('the_buzzer not yet defined')
     the_buzzer = Buzzer()
         
 song = ["E5","G5","A5","P","E5","G5","B5","A5","P","E5","G5","A5","P","G5","E5"]

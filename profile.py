@@ -1,5 +1,6 @@
 # Copyright @ 2023, Adrian Blakey. All rights reserved
 # A profile - simple description of what we are running - track+ lane
+# TODO - add controller, controller settings, car, motor, esc ...
 
 class Profile():
     

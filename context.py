@@ -1,5 +1,7 @@
 # Copyright @ 2023, Adrian Blakey. All rights reserved
 # Carries important objects around
+# TODO - better integrate this - carries stuff around
+
 import logging
 log = logging.getLogger("context")
 global the_context

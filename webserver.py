@@ -15,21 +15,20 @@ import logging
 log = logging.getLogger("webserver")
 
 global server
-global the_foo
+global the_ls
 
-class Foo():
-    # Hack to pass state to the webserver
+class LS_Value():
+    # Hack to pass logging_state to the webserver
     def __init__(self):
         pass
-        
-        
+         
     def set_state(self, logging_state: Logging_State) -> None:
         self._logging_state = logging_state
         
     def state(self) -> Logging_State:
         return self._logging_state
 
-the_foo = Foo()
+the_ls = LS_Value()
 
 server = Microdot()  
 Response.default_content_type = 'text/html'
@@ -44,17 +43,17 @@ async def index(request):
 @with_websocket
 async def send_data(request, ws):
     while True:
-        #log.debug('Logging state %s', the_foo.state())
+        #log.debug('Logging state %s', the_ls.state())
         # TODO apply some smoothing by capturing say 1 every ms and emitting the smoothed value
-        if the_foo.state().playback():
-            rec = the_foo.state().get_file().read_next()
+        if the_ls.state().playback():
+            rec = the_ls.state().get_file().read_next()
             if len(rec) != 0:
                 await ws.send(rec)
             else:
                 log.debug('Playback ended')
-                the_foo.state().playback_off()
+                the_ls.state().playback_off()
         else:
-            await ws.send(the_device.read_all())
+            await ws.send(the_device.read())
         time.sleep_ms(10) # 10ms same as collection frequency
         
 

@@ -198,6 +198,10 @@ class Config():
         return self._profile
      
      
+    def get_sdcard(self) -> (int, int, int, int, int, int):
+        return 1, 10, 11, 8, 9, 0x14<<20
+
+
     def __str__(self) -> str:
         if self._profile != None:
             buf = str(self._profile) + ' '

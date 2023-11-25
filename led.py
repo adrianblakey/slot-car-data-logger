@@ -8,22 +8,25 @@ log = logging.getLogger("led")
 
 class Led():
       
-    def __init__(self, pin, internal_pullup = False, internal_pulldown = False):
-        self.pin_number = pin
-        if internal_pulldown:
-            self.internal_pull = Pin.PULL_UP
-        elif internal_pullup:
-            self.internal_pull = Pin.PULL_DOWN
+    def __init__(self, pin: Pin, pullup: bool = False, pulldown: bool = False):
+        self._pin: Pin = pin
+        if pulldown:
+            _pull: int = Pin.PULL_UP
+        elif pullup:
+            _pull: int = Pin.PULL_DOWN
         else:
-            self.internal_pull = None
-        self.pin = Pin(pin, mode = Pin.OUT, pull = self.internal_pull)
-        self.pin.high()
+            _pull: int = None
+        self._pin = Pin(pin, mode = Pin.OUT, pull = _pull)
+        self._pin.high()
         
     def on(self):
-        self.pin.low()
+        self._pin.low()
         
     def off(self):
-        self.pin.high()
+        self._pin.high()
+        
+    def toggle(self):
+        self._pin.toggle()
         
 try:
     yellow_led
