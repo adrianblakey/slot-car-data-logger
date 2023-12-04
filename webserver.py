@@ -43,20 +43,21 @@ async def index(request):
 @with_websocket
 async def send_data(request, ws):
     while True:
-        #log.debug('Logging state %s', the_ls.state())
         # TODO apply some smoothing by capturing say 1 every ms and emitting the smoothed value
         if the_ls.state().playback():
-            rec = the_ls.state().get_file().read_next()
-            if len(rec) != 0:
-                await ws.send(rec)
-            else:
-                log.debug('Playback ended')
+            rec = the_ls.state().get_file().read_next(ts=False)
+            if len(rec) == 0:
                 the_ls.state().playback_off()
         else:
-            await ws.send(the_device.read())
-        time.sleep_ms(10) # 10ms same as collection frequency
+            rec = the_device.read()
+        if len(rec) != 0:
+            try:
+                await ws.send(rec)
+            except OSError as ex:
+                log.error('WS send failed %s', ex)
+        await asyncio.sleep_ms(10)
+        #time.sleep_ms(10) # 10ms same as collection frequency
         
-
 # Static CSS/JSS
 @server.route("/static/<path:path>")
 def static(request, path):
@@ -65,11 +66,9 @@ def static(request, path):
         return "Not found", 404
     return send_file("static/" + path)
 
-
 # shutdown
 @server.get('/shutdown')
 def shutdown(request):
     request.app.shutdown()
     return 'The server is shutting down...'
-   
 

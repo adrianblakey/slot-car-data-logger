@@ -19,55 +19,61 @@
         "blue yellow",
         "black blue"
     ],
+    "svgfile": "https://api.github.com/repos/adrianblakey/slot-car-tracks/contents/castle.svg",
     "direction": "acw",
     "laneseparation": 10.5,
     "records": [
         {
-            "class": {
-                "name": "es32",
-                "datestamp": "2021-111-11:8:0:0",
+                "car": "3800",
+                "datestamp": "2021-11-11:8:0:0",
                 "owner": "Terry G",
                 "time": "4.2"
-            }
+        },
+        {
+                "car": "genesis",
+                "datestamp": "2020-21-11:8:0:0",
+                "owner": "Terry G",
+                "time": "4.2"
         }
     ],
     "length": 10.5,
     "segments": [
         {
-            "id": 1
+            "id": 1,
             "interval": 9,
-            "acum": "9",
-            "tulip": "0->",
+            "acum": 9,
+            "tulip": "0->"
         },
         {
-            "id": 2
+            "id": 2,
             "interval": 4,
-            "acum": "13",
-            "tulip": "0u>",
+            "acum": 13,
+            "tulip": "0u>"
         },
         {
-            "id": 3
+            "id": 3,
             "interval": 1,
-            "cum": "14",
-            "tulip": "0->",
+            "cum": 14,
+            "tulip": "0->"
         },
         {
-            "id": 4
+            "id": 4,
             "interval": 2,
-            "cum": "16",
-            "tulip": "0u>",
+            "cum": 16,
+            "tulip": "0u>"
         },
         {
-            "id": 5
+            "id": 5,
             "interval": 7,
-            "cum": "23",
-            "tulip": "0->",
+            "cum": 23,
+            "tulip": "0->"
         },
         {
-            "id": 6
+            "id": 6,
             "interval": 2,
-            "cum": "29",
-            "tulip": "0n>",
-        },
+            "cum": 29,
+            "tulip": "0n>"
+        }
     ]
 }
+

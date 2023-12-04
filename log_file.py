@@ -60,9 +60,9 @@ class Log_File():
         self._fname = log_config[n]
         return self._fname
     
-    def read_next(self, ts: bool = False) -> str:
+    def read_next(self, ts: bool = True) -> str:
         # Read next record in file, with or wo timestamp
-        rec = None
+        rec = ''
         if not self._eof:
             try:
                 if not self._file:
@@ -72,14 +72,13 @@ class Log_File():
                 if len(rec) == 0:
                    self._eof = True
                 else:
+                    if not ts:
+                        rec = rec.split(',', 1)[1]
                     self._ct += 1
             except OSError as ex:
                 self._eof = True
                 log.info('File open/read issue %s %s', self._fname , ex)
-        if ts:
-            return rec
-        else:
-            return rec.split(',', 1)  # Remove ts
+        return rec
     
     def name(self) -> str:
         return self._fname

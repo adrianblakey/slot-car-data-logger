@@ -43,8 +43,7 @@ class Config():
         self._wifi_config: str = None
         self._profile: Profile = None
         self._my_id: str = ubinascii.hexlify(machine.unique_id()).decode()
-        
-        
+             
     def __wifi(self) -> (iter, str):
         # Set up a search list of wifi configuration
         #all_files = os.listdir(self._prfx)
@@ -65,8 +64,7 @@ class Config():
             self._more_wifi = False
         log.debug('Returning %s %s', self._iter_wifi, self._wifi_config)
         return self._iter_wifi, self._wifi_config
-        
-        
+              
     def __sd_card(self) -> None:
         # sd card attached - if so assume we use that for files
         try:
@@ -78,8 +76,7 @@ class Config():
         except OSError:
             self._prfx = './'
             log.info('No sd card')
-            
-            
+                   
     def __read_conf(self, file: str) -> dict:
         # Read a json file adding prefix
         if self._prfx == None:
@@ -94,27 +91,23 @@ class Config():
             raise RuntimeError(ex)
         return json_dict
 
-
     def __write_conf(self, file: str, json_dict: dict) -> None:
         # Write a json file adding prefix
         if self._prfx == None:
             self.__sd_card()
         with open(self._prfx + file, 'w') as f:
             log.debug('write %s', self._prfx + file)
-            json.dump(json_dict, f, separators=(',', ':'))    
-
-
+            json.dump(json_dict, f, separators=(',', ':'))
+            
     def prfx(self) -> str:
         if self._prfx == None:
             self.__sd_card()
         return self._prfx
    
-   
     def more_wifi(self) -> bool:
         # More wifi configs or not
         return self._more_wifi
-    
-    
+     
     def read_conn(self) -> (str, str):
         # Read the current WiFi connection file
         if self._prfx == None:
@@ -134,7 +127,6 @@ class Config():
             self._more_wifi = False
         return wifi['ssid'], wifi['password']
     
-
     # Instead of a track database - we just have profiles
     # 'at' is the current profile.
     # Profile ids are sequential integer numbers.
@@ -152,7 +144,6 @@ class Config():
         else:
             raise ValueError('No corresponding profile for id:', id) 
         
-
     def put_profile(self, profile: Profile) -> int:
         # Write back all the profiles
         # If id is not set or 0 - append, else merge
@@ -179,7 +170,6 @@ class Config():
         self.__write_conf(PROFILES_FILE, all_profiles)
         return id
     
-
     def read_profiles(self):
         # Read the profiles, set the profile to the one that's mine
         log.debug('Reading all profiles, and setting to mine')
@@ -190,17 +180,14 @@ class Config():
             self._profile = Profile(my_profile['track'], my_profile['lane'], my_profile['id'])
         else:
             raise ValueError('No corresponding profile for id:', me)
-        
-        
+          
     def get_profile(self) -> Profile:
         if self._profile == None:
             self.read_profiles()
         return self._profile
      
-     
     def get_sdcard(self) -> (int, int, int, int, int, int):
         return 1, 10, 11, 8, 9, 0x14<<20
-
 
     def __str__(self) -> str:
         if self._profile != None:
@@ -217,11 +204,9 @@ class Config():
             buf += 'Wifi config: ' + self._wifi_config 
         return buf
     
-    
     def my_id(self) -> str:
         return self._my_id
             
-
 if __name__ == "__main__":
     try:
         the_config
