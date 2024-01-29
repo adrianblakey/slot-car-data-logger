@@ -23,10 +23,24 @@ The V2 production device shall comprise:
 
 The device shall operate in two scenarios, namely:  
 
-    1. As a standalone device with Bluetooth connectivity that shall enable the device to be attached to say either: a phone running a generic Bluetooth client, or a track server, or both.  
-    2. As a WiFi-connected device that may be attached to an internet-connected track server.  
+  1. As a standalone device with Bluetooth connectivity that shall enable the device to be attached to say either: a phone running a generic Bluetooth client, or a track server, or both.  
+  2. As a WiFi-connected device that may be attached to an internet-connected track server.  
   
-As a standalone or connected device, data shall be read from and written to, either the onboard flash or an optional SD card peripheral. If an sd card is attached it shall be detected by the software at startup and used in preference to the onboard flash. We assume I/O to the onbard flash shalll be quicker than I/O to an sdcard. Writing data asynchonrously shall attempt to minimize any delays. 
+Operating either as a standalone or connected device, it shall be possible to capture data in realtime and read it back data, either to the onboard flash or an optional SD card peripheral. If an sd card is attached it shall be detected by the software at startup and used in preference to the onboard flash. We assume I/O to the onbard flash shalll be quicker than I/O to an sdcard. Writing data asynchonrously shall attempt to minimize any delays. 
+
+The signal to start capturing data shall be the press of a button on the device, (or perhpas a button on a hi-function, next generation, connected hand controller). Pressing the button a second time shall stop collection. Flashing leds shall indicate data is being collected.
+
+On initialization the device shall detect a WiFi network and attempt to make a connection. It shall be possible to save mutiple 
+WiFi configurations (SSID, uid, password) on the device. Each configurtion shall be tried in turn to establish a connection. On failing to connect 
+to a WiFi network the device shall dispable this form of communication. The process for creating a WiFi configuration shall involve connecting 
+a computer to the device using a USB cable and writing a file of the form wifi-*.jason to the device. There shall also be a 
+default configuration on the device of: 
+
+  - SSID: slotcar
+  - uid: slotcar
+  - pwd: sl0tc1r
+
+So that the user shall be able to configure their phone as an access point to enable the logger to get a net connection.
 
 The software shall detect the file system's free space size and writes shall be prevented from completely filling up the filesystem. This is important for writes to flash to prevent file system corruption.
 
