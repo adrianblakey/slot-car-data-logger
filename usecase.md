@@ -2,42 +2,53 @@
 
 ***Early draft***
 
-The basic device shall comprise:  
+The basic device shall be comprised of the following:  
 
-  - Pi Pico W processor.
-  - 2 buttons
-  - Piezo buzzer
-  -
-The V1 production device shall comprise:
-  - All of the above
-  - Micro sdcard
+  - Pi Pico W processor.  
+  - 2 buttons.  
+  - Piezo buzzer.  
+  
+The V1 production device shall comprise the following:
+
+  - All of the above.  
+  - A micro sdcard.  
 
 The V2 production device shall comprise:  
-  - The basic device - without the buzzer  
-  - Micro sd card  
-  - A small led display   
-  - 2 buttons  
+
+  - The basic device - without the buzzer.  
+  - Micro sd card.  
+  - A small led display.   
+  - 2 buttons..  
   - Rotary
 
-The device shall work in two modes, namely:
-    1. as a standalone device. A Bluetooth-connnected device that may be attached to a track server
-    2. A WiFi-connected device that may be attached to an internet-connected track server.  
-    3. As a standalone device and a connected device data shall be read from and written to, either the onboard flash or an optional SD card peripheral. If an sd card is attached it shall be detected by the software at startup and used in preference to the onboard flash. 
+The device shall operate in two scenarios, namely:  
 
-If data is written to flash, the software shall detect the file system's free space size and writes shall be prevented from completely filling up the filesystem.  
+    1. As a standalone device with Bluetooth connectivity that shall enable the device to be attached to say either: a phone running a generic Bluetooth client, or a track server, or both.  
+    2. As a WiFi-connected device that may be attached to an internet-connected track server.  
+  
+As a standalone or connected device, data shall be read from and written to, either the onboard flash or an optional SD card peripheral. If an sd card is attached it shall be detected by the software at startup and used in preference to the onboard flash. We assume I/O to the onbard flash shalll be quicker than I/O to an sdcard. Writing data asynchonrously shall attempt to minimize any delays. 
 
-A collection of profiles (Track/lane tuple) shall be stored on the filesystem as or flash). The device shall be shipped with profiles for all UK tracks (track name and lanes). The user shall be able to select a specific profile after power on either by button presses, or by connecting a portable Bluetooth device like a phone, and using generic BT client software that provides write access to device-presented characteristics to select and display a specific profile.
+The software shall detect the file system's free space size and writes shall be prevented from completely filling up the filesystem. This is important for writes to flash to prevent file system corruption.
 
-The device may be connected to up to 2 Bluetooth clients for selecting a track profile and receiving log data output. The device advertises 3 BT services, namely:  
+A collection of profiles (a track/lane tuple) shall be stored on the filesystem in a file. The device shall be shipped with profiles for all UK tracks (track name and lanes). The user shall be able to select a specific profile after power on either by button presses, or by connecting a portable Bluetooth device like a phone, and using generic BT client software that provides write access to device-presented characteristics to select and display a specific profile.
 
-  1. Read-only, device recognition, comprising:  
-     1. NameSerial number and IP address (if attached)
-     2. Software Version
-     3. Software name.
-     4. Read/write of the profile (track/lane) setting and display
-     5. Notification of log data (track voltage, controller voltage, controller current)
+The use case assumes a user shall, before they visit a specific track, they'd power up the device and select the track they are about to attend. When they arrive at the track they'd then power up the device and nominate their lane - again using a Bluetooth client or button presses.
+
+The device may be connected to up to 2 Bluetooth clients for selecting a track profile and receiving log data output. 
+
+The device advertises 3 BT services, namely:  
+
+  1. Read-only, device recognition, comprising:
       
-Note: Bluetooth low energy standards restrict the device to a maximum of 3 advertisements. Any extensions should add characteristics to the profile maintenance service.
+     1. NameSerial number and IP address (if attached).  
+     2. Software Version.  
+     3. Software name.  
+     4. Read/write of the profile (track/lane) setting and display.  
+     5. Notification of log data (track voltage, controller voltage, controller current).  
+  2. A read/write profile service - for modifying the target track selection.  
+  3. A notification service for receiving the captured voltage and current data.  
+     
+Note: Bluetooth low energy standards restrict the device to a maximum of 3 advertisements. Any extensions to the Bluetooth capbilities should therefore add characteristics to the profile maintenance service.
 
 Prior to attending a specific track or at arrival at the track, the device shall be powered up by plugging in to a lane or suitable bench power supply (note: the device also has a standard micro-usb connection on the pi pico w board that will power up the device and permit serial terminal access to the python “REPL”) using the standard three color-coded banana plugs.
 
