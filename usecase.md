@@ -35,7 +35,7 @@ WiFi configurations (SSID, uid, password) may be saved on the device. Each confi
 to a WiFi network the device shall disable this form of communication. 
 
 The process for creating a WiFi configuration shall involve connecting 
-a computer to the device using a USB cable and writing a file of the form wifi-*.jason to the device. There shall also be a 
+a computer to the device using a USB cable and writing a file of the form wifi-*.json to the device. There shall also be a 
 default configuration on the device of: 
 
   - SSID: slotcar
