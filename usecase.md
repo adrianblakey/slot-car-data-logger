@@ -18,21 +18,23 @@ The V2 production device shall comprise:
   - The basic device - without the buzzer.  
   - Micro sd card.  
   - A small led display.   
-  - 2 buttons..  
+  - 2 buttons.  
   - Rotary
 
 The device shall operate in two scenarios, namely:  
 
   1. As a standalone device with Bluetooth connectivity that shall enable the device to be attached to say either: a phone running a generic Bluetooth client, or a track server, or both.  
-  2. As a WiFi-connected device that may be attached to an internet-connected track server.  
+  2. As a WiFi-connected client device (not as an access point) that may be attached to a track server. (Note: a local track WiFi network may or may not have a connection to the Internet ...)  
   
-Operating either as a standalone or connected device, it shall be possible to capture data in realtime and read it back, either to the onboard flash or an optional SD card peripheral. If an sd card is attached it shall be detected by the software at startup (boot.py) and used in preference to the onboard flash. We assume I/O to the onbard flash shalll be quicker than I/O to an sdcard. Writing data asynchonrously shall attempt to minimize any delays. (TODO backup/overflow/duplex)
+Operating either as a standalone or WiFi connected device, it shall be possible to capture data in realtime and read it back, either to the onboard flash or an optional SD card peripheral. If an SD card is attached it shall be detected by the software at startup (boot.py) and used in preference to the onboard flash. We assume I/O to the onbard flash shalll be quicker than I/O to an sd card. Writing data asynchonrously shall attempt to minimize any delays. (TODO backup/overflow/duplex)
 
-The signal to start capturing data shall be the press of a button on the device, (or perhpas a button on a hi-function, next generation, connected hand controller). Pressing the button a second time shall stop collection. Flashing leds shall indicate data is being collected.
+The signal to start capturing data shall be the press of a button on the device, (or perhaas a button on a hi-function, next generation, connected hand controller :-)). Pressing the button a second time shall stop collection. Flashing leds shall indicate data is being collected.
 
-On initialization the device shall detect a WiFi network and attempt to make a connection. It shall be possible to save mutiple 
-WiFi configurations (SSID, uid, password) on the device. Each configurtion shall be tried in turn to establish a connection. On failing to connect 
-to a WiFi network the device shall disable this form of communication. The process for creating a WiFi configuration shall involve connecting 
+On initialization the device shall detect a WiFi network and attempt to make a connection. Mutiple 
+WiFi configurations (SSID, uid, password) may be saved on the device. Each configurtion shall be tried in turn to establish a connection. It shall be beneficial to keep this list to a minimum to save space and optimize search time. If the device fails to connect 
+to a WiFi network the device shall disable this form of communication. 
+
+The process for creating a WiFi configuration shall involve connecting 
 a computer to the device using a USB cable and writing a file of the form wifi-*.jason to the device. There shall also be a 
 default configuration on the device of: 
 
