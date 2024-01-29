@@ -42,13 +42,11 @@ The device advertises 3 BT services, namely:
       
      1. NameSerial number and IP address (if attached).  
      2. Software Version.  
-     3. Software name.  
-     4. Read/write of the profile (track/lane) setting and display.  
-     5. Notification of log data (track voltage, controller voltage, controller current).  
-  2. A read/write profile service - for modifying the target track selection.  
-  3. A notification service for receiving the captured voltage and current data.  
+     3. Software name.   
+  2. A read/write profile service - for display and modifying the target track and lane selection.  
+  3. A notification service for receiving the device-captured track voltage, controller current and controller voltage and current data.  
      
-Note: Bluetooth low energy standards restrict the device to a maximum of 3 advertisements. Any extensions to the Bluetooth capbilities should therefore add characteristics to the profile maintenance service.
+Note: Bluetooth low energy standards and the device's python implemenatation seem to restrict the device to a maximum of 3 advertisements. Any extensions to the Bluetooth capbilities should therefore add characteristics to the profile maintenance service.
 
 Prior to attending a specific track or at arrival at the track, the device shall be powered up by plugging in to a lane or suitable bench power supply (note: the device also has a standard micro-usb connection on the pi pico w board that will power up the device and permit serial terminal access to the python “REPL”) using the standard three color-coded banana plugs.
 
@@ -57,11 +55,12 @@ As a Bluetooth low energy server it may be located by a conventional name of the
 
 Several “free” Bluetooth client apps are available for the iPhone and Android. Download one, open it up and scan for devices. The logger shall appear in the list. Connect to it to see its 3 service advertisements. (Todo list the UUIDs)
 
-The BLE-standard device profile service shows device information, the setting service offers writable characteristics to configure:  
-  - Profile (track, lane)WiFi (ssid, password)
-  - The logger notification output service provides log data.
+The BLE-standard device profile service shows device information, the setting service offers writable characteristics to configure:   
+  
+  - Profile (track, lane)WiFi (ssid, password).  
+  - The logger notification output service provides log data.  
     
-Do not subscribe to the log notification service and its single characteristic unless you have use for the provided data. Its purpose is to feed data to a trackside server in preference to WiFi if there isn’t a WiFi service.
+Do not subscribe to the log notification service and its single characteristic unless you have use for the provided data. Its purpose is to feed data to a trackside server in preference to WiFi if there isn’t a WiFi service. We should also consider protecting this feed from eavesdropping if it's the choice of the specific user to not share it with the track and other drivers.
 
 The configuration service offers the ability to select a specific profile. Profiles are simple track/lane pairs identified by an integer number starting at 1.
 
@@ -81,9 +80,10 @@ The device now permits the lane number to be adjusted using the 2 buttons on the
 
 The device flashes the lane number using the red led. The number of flashes correspond to the lane number starting by convention with the red lane as number 1. The flashes occur .5 secs apart and are repeated at 3 sec intervals. 
 
-Default configuration of the  2 buttons is as follows: 
-  1. Yellow button increments the lane number.
-  2. The red button decrements the lane number.
+Default configuration of the  2 buttons is as follows:  
+
+  1. Yellow button increments the lane number.  
+  2. The red button decrements the lane number.  
      
 On reaching the first lane or last lane the lane number wraps around e.g. on a four lane track decrementing lane 1 results in lane 4 being selected etc. 
 
@@ -91,20 +91,22 @@ If no buttons are pressed within 10 seconds the device moves out of this setting
 
 The device initializes all its functionality and changes the button behavior so that they now become responsible for data capture to and replay from files on the device 
 After power on the button defaults to:  
+
   - Yellow button - toggle on/off local data capture of log data to a local timestamped file.  
-  - Red button - replay the last captured log file to BT and WiFi connected readers in preference to realtime data.
+  - Red button - replay the last captured log file to BT and WiFi connected readers in preference to realtime data.  
     
 A track server application shall be provided that shall maintain track data such as:  
-  - Length
-  - Geographic location.
-  - Number and color of lanes.
-  - Lane rotation
-  - Lane vectors represented in SVG so that an accurate diagram of the track may be displayed in a browser.
-  - Lane segments in hundredths on the total lap length
-  - Lap records by class
-
+  - Length.  
+  - Geographic location.  
+  - Number and color of lanes.  
+  - Lane rotation.  
+  - Lane vectors represented in SVG so that an accurate diagram of the track may be displayed in a browser.  
+  - Lane segments in hundredths on the total lap length.  
+  - Lap records by class.  
 
 The data shall be sufficient to correlate log data with the track specifics to give the data "meaning". 
+
+(TODO - and controller and car-specific data?)
 
 The track server application shall not need to be connected to the internet, if it is connected it shall on startup attempt to retrieve the latest track configuration data from a central track datastore maintained on github.  
 
