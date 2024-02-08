@@ -1,51 +1,71 @@
 # Slot Car Data Logger
 
 This repo contains the design and firmware of a slot car data logger. This is a device that should be of interest to serious slot 
-car racers who are interested in gaining greater insight into their own performance and the performance of their car(s) and controller(s). It does this by measuring the volatge and current over time and saves and graphs the values.
+car racers who are interested in gaining greater insight into their own performance and the performance of their car(s) and controller(s). It does this by measuring the voltage and current over time as you control a car on the track, and saves and graphs the values.
 
 The data logger device comprises a voltage and currrent measuring circuit that provides signals to a Raspberry Pi Pico W. These three signals are fed to 3 of the Pi Pico analog to digital (ADC) inputs on pins 26, 27 and 28. Micropython code running on the Pi reads these values and writes them to disk, bluetooth and the Web on a WiFi connection. 
 
-The voltages are the track voltage - usually a fairly constant 12+ vDC, and the variable controller output voltages (sent to the car). The current is the flow to the car when it is driving forward and from the car under braking (usually quite small).
+The voltages are the track voltage - usually a fairly constant 12+ vDC, and the variable controller output voltages (sent to the car). The current is the positive flow to the car when it is driving forward and the negative flow from the car under braking (usually quite small).
 
 The device passively intermediates between a slot car track and the controller and collects data about varying controller 
 current and voltage and the (conventionally fixed at ~12vDC) track voltage in real time from a slot car controller 
 and track supply. 
 
 The information is useful to a driver (the person operating the controller) so that they can improve their lap times. 
-Therefore the data can be fed back to them in near realtime and retrospectively, in a way that it can easily be 
-disseminated and put to use.
+The data can be fed back to to the driver in near realtime and retrospectively, in a way that it can easily be 
+disseminated and acted on.
 
-The feedback mechanism is be a continuously scrolling line graph of three traces displayed in a web browser on a connected device.
+The feedback mechanism is a continuously scrolling line graph of three traces displayed in a web browser on a connected device.
 
-The device is standalone and has no knowledge about the track layout. An obvious improvement 
-would be track knowledge e.g. number of lanes, lane colors,
-lap length, lap topology e.g. 16' straight, 120 degree corner inside radius 1'. It would also be important to know where the start finish lane was 
-located. On tracks where this is implemented a a dead strip this can be correlated to a regular dip to near zero in the current data.
-Furthermore if the track data was stored centrally on a web server, it could be downloaded onto the device on startup or before racing. 
-Correlating the track topographywith traces would make traces semantically meaningful.
+The device is standalone and has no knowledge about the track layout, the car configuration or controller. Obvious improvements would be to also have all of this 
+additional information. 
 
-However raw plots are expected to show 
-correlations that should make the car's track position easy to discern - for example when a car starts, it's expected
-to go from "zero" to maximum current and voltage very quickly. In a later release we could consider some sort of 
-graph markup to provide the missing semantics.
+Some information could be provided about the car being driven - such as: motor (winding, magnets) gearing, weight, configuration (sidewinder, anglewinder, in-line), class, tire diameter, tire width.
 
-A typical lap time is in the order of 3 - 6 seconds on a track that can have between 4 and 8 lanes. Lanes are 
-color-coded by convention. Each lane could have a logger. A race can last between 5 and 15 minutes.
+Information about the controller might include: make, model, settings, resistor block, age.
+
+Track knowledge would include: 
+
+   number of lanes.  
+   lane colors.  
+   lap length.  
+   lap topology e.g. 16' straight, 120 degree corner inside radius 1'.  
+   location of start/finish line. On tracks where this is implemented a a dead strip this can be correlated to a regular dip to near zero in the current data.  
+   
+It would be extremely useful if there was an authentic, authoratative, well-maintained track database stored centrally say on a web server. Having this available would mean
+it could be downloaded onto the device on startup or before racing and used to
+correlate the track topography with logged values to make traces semantically meaningful.
+
+Without the track data "raw" plots are expected to show 
+correlations that should make a car's track position easy to discern - for example when a car starts, it's expected
+to go from "zero" to maximum current and voltage very quickly. Beaing able to mark up the data after the fact could be used to provide missing semantics.
+
+A typical lap time is in the order of 3 - 6 seconds on a track that can typically have between 4 and 8 lanes. Lanes are 
+color-coded by convention (red - through black). A race can last between 5 and 15 minutes, with each driver rotating through all or some lanes (depdending on the number of drivers)
+in a prescribed order.
 
 To collect a meaningful dataset the data shall be sampled say at 10mSec (10, 1 thousandths of sec) intervals or slightly longer (this might be adjusted 
-to minimize the amount of collected data). Therefore in say a 15 minute session a single controller is 
-capturing say 15 * 60 * 10 * 3 = 27,000 tuples of timestamp, value, tag. As a character string this might be 
-say ~23 bytes e.g. 206656250000,0.012085,V  Total ~1/2 MByte
+to minimize the amount of collected data). Anecdotally, a driver can react in about 20mSecs. Therefore in say a 15 minute session a single controller is 
+capturing say 15 * 60 * 10 * 3 = 27,000 tuples of timestamp, value, tag. As a character string, this might be 
+say ~31 bytes e.g. 206656250000,12.345,4.678,3.686 Total ~1/2 MByte per race lane.
 
-The design is (simplistically): read from the ADC's, and written to a sink. Where the sink can be:
+The software runs several asynchronous loops to read from the ADC's, and write to sinks (and monitor button input). Where the sinks are:
 
- 1. A remotely connected web browser.  
- 2. Local filesystem on the Pico on the flash or sdcard.
+ 1. A websocket-connected web browser.  
+ 2. A file on the device's local filesystem on the flash or sdcard.
  3. Bluetooth.  
 
-There is limited flash storage to store data locally, the code does not fully populate the store to guard against filesystems issues.
-And in any event it might still need to be copied off the device. A WiFi connection to a browser is used to stream data in real-time
-using websockets - a simple mechanism implemented in the Microdot web server.
+There is about 1MByte of flash storage on which to store data locally. Since this is a limited resource and it's possible to corrupt it, the code does not fully populate the store
+to guard against filesystems issues.
+
+If the device has a WiFi connection to either a local track network, and the Internet the logger software is able to provision the device, unload collected data and stream data in realtime to a browser. A WiFi connection to a browser is used to stream data in real-time
+(using websockets) to a browser.
+
+The use cases might be as follows:
+
+  1. Track information provisioning.  
+  2. Uploading and persisting locally saved data.  
+  3. Streaming the logged data to a web browser - running either say on a personal device (like a tablet, phone or laptop), or a track server or Internet server or both, or all.  
 
 ## Device Specifics
 
