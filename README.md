@@ -26,11 +26,11 @@ Information about the controller might include: make, model, settings, resistor 
 
 Track knowledge would include: 
 
-   number of lanes.  
-   lane colors.  
-   lap length.  
-   lap topology e.g. 16' straight, 120 degree corner inside radius 1'.  
-   location of start/finish line. On tracks where this is implemented a a dead strip this can be correlated to a regular dip to near zero in the current data.  
+   - number of lanes.  
+   - lane colors.  
+   - lap length.  
+   - lap topology e.g. 16' straight, 120 degree corner inside radius 1'.  
+   - location of start/finish line. On tracks where this is implemented a a dead strip this can be correlated to a regular dip to near zero in the current data.  
    
 It would be extremely useful if there was an authentic, authoratative, well-maintained track database stored centrally say on a web server. Having this available would mean
 it could be downloaded onto the device on startup or before racing and used to
