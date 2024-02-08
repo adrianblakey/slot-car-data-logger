@@ -75,14 +75,14 @@ Channels:
 
   GP16      - Push button - black  
   GP17      - External red LED, low = ON  
-  GP18      - External yellow LED, low = ON 
-  GP20      - Piezo sound 
+  GP18      - External yellow LED, low = ON  
+  GP20      - Piezo sound  
   GP21      - Piezo sound (inverted) - (low volume sound output in the range 200Hz - 4KHz)  
-  GP22      - Push button - yellow
+  GP22      - Push button - yellow  
   GP26/ADC0 - Current drawn by the motor through the hand controller  
   GP27/ADC1 - Output voltage to track and motor from the hand controller  
-  GP28/ADC2 - Track incoming supply voltage 
-  GP29/ADC3 - not used - mcu power
+  GP28/ADC2 - Track incoming supply voltage  
+  GP29/ADC3 - not used - mcu power  
 
 Notes: 
 
