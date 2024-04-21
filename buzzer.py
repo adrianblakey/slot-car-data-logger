@@ -137,6 +137,6 @@ except NameError:
     log.debug('the_buzzer not yet defined')
     the_buzzer = Buzzer()
         
-song = ["E5","G5","A5","P","E5","G5","B5","A5","P","E5","G5","A5","P","G5","E5"]
-
+song1 = ["E5","G5","A5","P","E5","G5","B5","A5","P","E5","G5","A5","P","G5","E5"]
+song = ["E5","G5","A5","P","E5","G5"]
 the_buzzer.playsong(song)
