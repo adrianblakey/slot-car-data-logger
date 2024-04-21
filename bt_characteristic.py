@@ -1,24 +1,15 @@
 # Copyright @ 2023, Adrian Blakey. All rights reserved
-# A bluetooth service - not used
+# A bluetooth charcteristic
+# Not used
 
-from aioble import Service
-from bluetooth import UUID
-import logging
+import aioble
 
-log = logging.getLogger("bt_service")
-
-class Bt_Service():
+class Bt_Characteristic():
     
-    def __init__(self, uuid: int | str):
-        self._service: Service = Service(UUID(uuid))
-
-
-
+    def __init__(self, uuid: str, ):
+        self._service = aioble.Service(uuid)
+        
+        
+        
 if __name__ == "__main__":
-    try:
-        the_service
-    except NameError:
-        log.info('the_service not yet defined')
-        the_service = Bt_Service(0x180A)
-        log.debug(the_service)
-
+    aioble.Characteristic(logger_service, _LOGGER_PROFILE_SEND_UUID, read=True, notify=True)

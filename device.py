@@ -1,4 +1,4 @@
-# Copyright @ 20023, Adrian Blakey. All rights reserved
+# Copyright @ 2023, 2024 Adrian Blakey. All rights reserved
 # Represents the logger hardware
 
 from machine import ADC, Pin
@@ -20,9 +20,9 @@ class Device():
     
     def __init__(self):
         self._zero_current: int = 0
-        self._adc0 = ADC(Pin(26))
-        self._adc1 = ADC(Pin(27))
-        self._adc2 = ADC(Pin(28))
+        self._adc0 = ADC(Pin(26)) # current
+        self._adc1 = ADC(Pin(27)) # volts to car
+        self._adc2 = ADC(Pin(28)) # track
         self._adc_filtered: float = 0
         # Pin 29 our supply voltage
         
@@ -58,7 +58,6 @@ except NameError:
         
 if __name__ == "__main__":
     print(the_device.read_all())
-
 
 
 

@@ -7,6 +7,9 @@ import socket
 from machine import Pin
 import errno
 from led import Led, red_led, yellow_led
+from config import Config
+
+the_config: Config = Config()
 
 import logging
 
@@ -38,6 +41,7 @@ class Connection():
         
     def connect(self, ssid: str, password: str) -> str:
         self._ssid = ssid
+        self._password = password
         wlan = network.WLAN(network.STA_IF)
         if wlan.status() == network.STAT_GOT_IP:
             self._connected = True
@@ -47,14 +51,16 @@ class Connection():
         wlan.active(True)
         wlan.config(pm = 0xa11140)  # Disable power-save
         mac = wlan.config('mac')
-        host = 'slot-car-logger-' + ''.join('{:02x}'.format(b) for b in mac[3:])
+        #host = 'slot-car-logger-' + ''.join('{:02x}'.format(b) for b in mac[3:])
+        host = 'slot-car-logger-' + the_config.my_id()[0:8]
         network.hostname(host)
         log.debug('Connecting to %s current status: %s hostname %s', self._ssid, str(wlan.status()), host)
         red_led.off()
         yellow_led.on()
-        wlan.connect(self._ssid, password)
+        wlan.connect(self._ssid, self._password)
         i: int = self._retries
         while i > 0 and wlan.status() != network.STAT_GOT_IP:
+            self._state(wlan)
             red_led.toggle()
             yellow_led.toggle()
             i -= 1
@@ -62,6 +68,7 @@ class Connection():
         if wlan.status() != network.STAT_GOT_IP:
             log.info('Connection failed. Check ssid and password')
             self._connected = False
+            self._ip = None
             wlan.active(False)
         else:
             self._connected = True
@@ -83,7 +90,7 @@ class Connection():
             self.test()
         return self._connected
     
-    def test(self):
+    def test(self) -> None:
         log.debug("Test connection")
         try:
             addr = socket.getaddrinfo('www.google.com', 443)[0][-1]
@@ -95,18 +102,35 @@ class Connection():
             if err.errno == errno.ENXIO: #  no network available
                 log.info("No network connection")
 
+    def set_ids(self, ssid: str, pwd: str) -> None:
+        self._ssid = ssid
+        self._pwd = pwd
+     
+    def get_connection(self) -> None:
+        log.debug('Get connection')
+        ssid, pwd = the_config.read_conn()
+        while True:
+            if ssid == None and pwd == None:
+                break
+            self.set_ids(ssid, pwd)
+            log.debug("Attempting to connect to wifi with %s %s", ssid, pwd)
+            self.connect(ssid, pwd)
+            if self.connected():
+                log.debug('Connected %s %s', ssid, pwd)
+                break
+            else:
+                log.debug('No connection')
+            ssid, pwd = the_config.read_conn()
+        
 if __name__ == "__main__":
-    Pin("LED", Pin.OUT,value=1)
     try:
         the_connection
+        log.debug('Existing connection %s', the_connection)
     except NameError:
         log.info('the_connection not yet defined')
         the_connection = Connection()
-        log.debug("Attempting to connect to wifi")
-        the_connection.connect()
-        if the_connection.connected():
-            the_connection.test()
-
-
-
-
+    if the_connection.connected():
+        pass
+    else:
+        the_connection.get_connection()
+    the_connection.test()

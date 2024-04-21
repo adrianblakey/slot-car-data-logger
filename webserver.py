@@ -71,4 +71,3 @@ def static(request, path):
 def shutdown(request):
     request.app.shutdown()
     return 'The server is shutting down...'
-

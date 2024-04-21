@@ -39,4 +39,3 @@ except NameError:
     log.info('red_led Not yet defined')
     red_led = Led(17)
 
-

@@ -110,6 +110,7 @@ bt_connection: DeviceConnection = None  # global - the bt connection
 # Serially wait for connections. Don't advertise while a central is
 # connected - single connection.
 # TODO what if we want 2 connections - one to stream to a server - another to phone say?
+# TODO If we are happy with one connection - stop advertising!
 async def peripheral_task():
     global bt_connection
     while True:
@@ -207,4 +208,3 @@ try:
     asyncio.run(main())
 finally:
     asyncio.new_event_loop()
-

@@ -13,7 +13,6 @@ global firmware_char
 global software_char
 
 try:
-    the_device_information_service
     the_device_information_service = Service(UUID(0x180A))
     name_char = Characteristic(the_device_information_service, UUID(0x2A29), read=True)
     serial_char = Characteristic(the_device_information_service, UUID(0x2A25), read=True)
@@ -24,6 +23,5 @@ except NameError:
   
 
 log.debug('Device information service %s', the_device_information_service)
-
 
 

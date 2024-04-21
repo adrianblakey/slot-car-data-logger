@@ -87,4 +87,3 @@ class Logging_State():
         log_config.sort(reverse=True)
         return log_config[0]
         
-

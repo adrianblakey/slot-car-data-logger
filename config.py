@@ -1,6 +1,7 @@
 # Copyright @ 20023, Adrian Blakey. All rights reserved
 # Configuration - environment variables
 # Lazy initialization cause it's called from boot and main
+
 import os
 import machine
 import ubinascii
@@ -219,9 +220,11 @@ if __name__ == "__main__":
         if ssid == None and pwd == None:
             break
         the_connection.set_ids(ssid, pwd)
-        the_connection.connect()
+        the_connection.connect(ssid, pwd)
         ssid, pwd = the_config.read_conn()
     if the_connection.connected():
+        # TODO Test setting the rtc
+        log.debug('connected %s %s', ssid, pwd)
         pass
     log.debug('Not connected')
     the_config.read_profiles()
@@ -237,4 +240,3 @@ if __name__ == "__main__":
     log.info('Use new profile %s', newid)
     the_config.use_id(newid)
     print(the_config)
-

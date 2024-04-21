@@ -228,4 +228,3 @@ function updateValues(data) {
   sensorValues.value = sensorData.join("\r\n");
 }
 
-

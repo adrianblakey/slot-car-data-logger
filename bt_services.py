@@ -92,4 +92,3 @@ async def receive_task():
         profile_recv_characteristic.notify(connection)
         await asyncio.sleep(1)
 
-

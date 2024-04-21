@@ -1,10 +1,12 @@
 # Copyright @ 20023, Adrian Blakey. All rights reserved
-# Runs everytime - so config Wifi, mount sd?
+# Runs everytime - so config Wifi, mount sd
 
 import os
 from machine import Pin, SPI
 from config import Config
 import logging
+import time
+import ntptime
 from connection import Connection
 from sdcard import SDCard
 
@@ -13,16 +15,13 @@ log.info('Starting boot')
 
 the_config = Config()
 the_connection = Connection()
+the_connection.get_connection()
 
-ssid, pwd = the_config.read_conn()
-while True:
-    if ssid == None and pwd == None:
-        break
-    if the_connection.connect(ssid, pwd) != '':
-        break
-    ssid, pwd = the_config.read_conn()
-
-if not the_connection.connected():
+if the_connection.connected():
+    log.debug("Local time before synchronization：%s" %str(time.localtime()))
+    ntptime.settime()
+    log.debug("Local time after synchronization：%s" %str(time.localtime()))
+else:
     log.debug('Not connected')
 
 try:
@@ -36,6 +35,5 @@ except AttributeError as ex:
     log.info('No sd card %s', ex)
     
 Pin("LED", Pin.OUT).on()
-
 
 

@@ -6,6 +6,7 @@ import logging
 import time
 
 log = logging.getLogger("log_file")
+FT: str = 'csv'
 
 class Log_File():
     
@@ -16,6 +17,9 @@ class Log_File():
         self._file = False
         self._eof = False
 
+    def __hdr(self) -> bool:
+        self.log('TS,Track V, Car V, Car I')
+        
     def _fs_full(self) -> bool:
         log.debug('Checking fs full')
         if not self._prevent_write:
@@ -46,16 +50,17 @@ class Log_File():
                 h = "%02d" % hour
                 min = "%02d" % minute
                 s = "%02d" % second
-                self._fname = str(year) + '_' + m + '_' + md + '_' + h + '_' + min + '_' + s + '.log'
+                self._fname = str(year) + '_' + m + '_' + md + '_' + h + '_' + min + '_' + s + '.' + FT
             else:
                 self._fname = fname
+            self.__hdr()
             log.debug('Fname: %s', self._fname)
         return self._fname
     
     def new_for_read(self, n: int = 0) -> str:
         # Get the latest (or latest - n) log file for reading
         # Get the file prefix from config - usibg context?
-        log_config = [l for l in os.listdir(self._config.prfx()) if l.endswith('log')]
+        log_config = [l for l in os.listdir(self._config.prfx()) if l.endswith(FT)]
         log_config.sort(reverse=True)
         self._fname = log_config[n]
         return self._fname
@@ -122,6 +127,5 @@ if __name__ == "__main__":
     r = rfile.read_next()
     while not rfile.eof():
         r = rfile.read_next()
-
 
 

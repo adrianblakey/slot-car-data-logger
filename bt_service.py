@@ -21,4 +21,3 @@ if __name__ == "__main__":
         log.info('the_service not yet defined')
         the_service = Bt_Service(0x180A)
         log.debug(the_service)
-
