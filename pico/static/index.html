@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slot Car Logger</title>
+<link rel="icon" href="/static/favicon.ico">
+<link rel="stylesheet" href="/static/index.css">
+</head>
+<body>
+<h1>Slot Car Logger</h1>
+
+<section id="status">
+  <div class="row"><span class="label">Recording</span><span id="st-recording">-</span></div>
+  <div class="row"><span class="label">Records</span><span id="st-count">-</span></div>
+  <div class="row"><span class="label">Flash free</span><span id="st-flash">-</span></div>
+</section>
+
+<section id="controls">
+  <button id="btn-start">Start</button>
+  <button id="btn-stop">Stop</button>
+  <button id="btn-mark">Mark lap</button>
+</section>
+
+<section id="live">
+  <div class="row"><span class="label">Current (A)</span><span id="live-i">-</span></div>
+  <div class="row"><span class="label">Track V</span><span id="live-vt">-</span></div>
+  <div class="row"><span class="label">Supply V</span><span id="live-vs">-</span></div>
+</section>
+
+<section id="profile">
+  <h2>Profile</h2>
+  <form id="profile-form">
+    <label>Track <input name="track" id="p-track"></label>
+    <label>Race <input name="race" id="p-race"></label>
+    <label>Lane <input name="lane" id="p-lane" type="number" min="1" max="8"></label>
+    <label>Controller <input name="controller" id="p-controller"></label>
+    <label>Car <input name="car" id="p-car"></label>
+    <button type="submit">Save profile</button>
+  </form>
+</section>
+
+<section id="sessions">
+  <h2>Sessions</h2>
+  <table id="session-table"><tbody></tbody></table>
+  <button id="btn-erase">Erase all sessions</button>
+</section>
+
+<script src="/static/index.js"></script>
+</body>
+</html>

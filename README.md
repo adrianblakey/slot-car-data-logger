@@ -1,221 +1,387 @@
-# Slot Car Data Logger
+# Slot Car Logger — Pico W (RP2040)
 
-This repo contains the design and firmware of a slot car data logger. This is a device that should be of interest to serious slot 
-car racers who are interested in gaining greater insight into their own performance and the performance of their car(s) and controller(s). It does this by measuring the voltage and current over time as you control a car on the track, and saves and graphs the values.
+A MicroPython data logger for slot car racing, running on the original
+**Raspberry Pi Pico W (RP2040)**. It sits inline between the controller and
+the track, sampling current and voltage on three ADC channels, and logs
+sessions to internal flash. There is no display, no SD card, and no nav
+buttons — just two buttons, a piezo beeper, and an abbreviated Wi-Fi/BLE UI.
 
-The data logger device comprises a voltage and currrent measuring circuit that provides signals to a Raspberry Pi Pico W. These three signals are fed to 3 of the Pi Pico analog to digital (ADC) inputs on pins 26, 27 and 28. Micropython code running on the Pi reads these values and writes them to disk, bluetooth and the Web on a WiFi connection. 
+This is a downgraded sibling of the [aartech-dev/logger](https://github.com/aartech-dev/logger)
+Pico 2 W (RP2350) project, which has an ST7789 display, a micro-SD card, and
+hardware-chained-DMA ADC capture. See "Departures from the Pico 2 W
+reference" below for what changed and why.
 
-The voltages are the track voltage - usually a fairly constant 12+ vDC, and the variable controller output voltages (sent to the car). The current is the positive flow to the car when it is driving forward and the negative flow from the car under braking (usually quite small).
+**Status:** built and host-tested (`make host-test`, 46 tests), then deployed
+to and exercised on a real Pico W. See "What's verified on hardware" and
+"What's still unverified" below.
 
-The device passively intermediates between a slot car track and the controller and collects data about varying controller 
-current and voltage and the (conventionally fixed at ~12vDC) track voltage in real time from a slot car controller 
-and track supply. 
+---
 
-The information is useful to a driver (the person operating the controller) so that they can improve their lap times. 
-The data can be fed back to to the driver in near realtime and retrospectively, in a way that it can easily be 
-disseminated and acted on.
+## Hardware
 
-The feedback mechanism is a continuously scrolling line graph of three traces displayed in a web browser on a connected device.
+| Component | Details |
+|-----------|---------|
+| MCU | Raspberry Pi Pico W — RP2040 dual Cortex-M0+ @ 125 MHz, CYW43439 Wi-Fi + BLE |
+| Current sensor | LEM CASR 50-NP — bipolar, 0.025 V/A, GP26 (ADC0) |
+| Voltage inputs | Resistive dividers, 0-18 V -> 0-3.3 V, GP27/28 (ADC1/2) |
+| Storage | Internal flash only — no SD card |
+| User I/O | 2 buttons + piezo beeper — no display |
 
-The device is standalone and has no knowledge about the track layout, the car configuration or controller. Obvious improvements would be to also have all of this 
-additional information. 
+### GPIO pin map
 
-Some information could be provided about the car being driven - such as: motor (winding, magnets) gearing, weight, configuration (sidewinder, anglewinder, in-line), class, tire diameter, tire width.
+| GPIO | Signal | Notes |
+|------|--------|-------|
+| GP15 | Button A | Short press: toggle capture. Held at boot: factory reset. |
+| GP17 | Button B | Short press: lap marker (only while capturing). |
+| GP20 | Beeper (piezo +) | PWM slice 2A |
+| GP21 | Beeper (piezo -, inverted) | PWM slice 2B, driven out of phase for volume |
+| GP26 | ADC0 — track current | LEM CASR 50-NP, bipolar |
+| GP27 | ADC1 — track voltage | Resistive divider |
+| GP28 | ADC2 — supply voltage | Resistive divider |
 
-Information about the controller might include: make, model, settings, resistor block, age.
+Every GPIO the Pico 2 W reference spends on the display and nav buttons
+(GP2/3/16/18/20 for micro-gui, GP4-13 for SPI0/SPI1 display+SD) is free on
+this board — only the pins above are claimed.
 
-Track knowledge would include: 
+---
 
-   - number of lanes.  
-   - lane colors.  
-   - lap length.  
-   - lap topology e.g. 16' straight, 120 degree corner inside radius 1'.  
-   - location of start/finish line. On tracks where this is implemented a a dead strip this can be correlated to a regular dip to near zero in the current data.  
-   
-It would be extremely useful if there was an authentic, authoratative, well-maintained track database stored centrally say on a web server. Having this available would mean
-it could be downloaded onto the device on startup or before racing and used to
-correlate the track topography with logged values to make traces semantically meaningful.
+## Departures from the Pico 2 W reference
 
-Without the track data "raw" plots are expected to show 
-correlations that should make a car's track position easy to discern - for example when a car starts, it's expected
-to go from "zero" to maximum current and voltage very quickly. Beaing able to mark up the data after the fact could be used to provide missing semantics.
+**ADC capture: plain `machine.ADC` polling on Core 1, not chained DMA.**
+`pico/src/adc_device.py` polls `ADC(26/27/28).read_u16()` in a tight,
+allocation-free Core 1 loop, paced to `CONFIG.SAMPLE_RATE_HZ` (default
+200 Hz). The reference's `adc_worker.py` hand-tunes RP2350 uctypes register
+maps for chained dual-DMA capture at ~7.5 kHz — validated only on real
+RP2350 hardware, whose register layout doesn't carry over to RP2040, and
+which a "downgraded" no-display device doesn't need anyway.
 
-A typical lap time is in the order of 3 - 6 seconds on a track that can typically have between 4 and 8 lanes. Lanes are 
-color-coded by convention (red - through black). A race can last between 5 and 15 minutes, with each driver rotating through all or some lanes (depdending on the number of drivers)
-in a prescribed order.
+**Storage format: an 8-byte binary record, not CSV.** No SD card means every
+byte on internal flash counts. `pico/src/log_record.py` packs each sample as
+`struct '<Hhhh'` — `dt_ms` (ms since the previous record), `i_cA` (current,
+centi-amps), `vt_cV`/`vs_cV` (voltages, centivolts) — about 3x smaller than
+the reference's CSV rows and half the size of its own 16-byte binary wire
+format. A lap marker (Button B) is a record with `i_cA == -32768`, the same
+"impossible value" sentinel trick the reference uses for CSV marker rows.
+`tools/decode_log.py` converts a session file back to CSV/pandas on a host
+machine.
 
-To collect a meaningful dataset the data shall be sampled say at 10mSec (10, 1 thousandths of sec) intervals or slightly longer (this might be adjusted 
-to minimize the amount of collected data). Anecdotally, a driver can react in about 20mSecs. Therefore in say a 15 minute session a single controller is 
-capturing say 15 * 60 * 10 * 3 = 27,000 tuples of timestamp, value, tag. As a character string, this might be 
-say ~31 bytes e.g. 206656250000,12.345,4.678,3.686 Total ~1/2 MByte per race lane.
+**No display — everything is a beep or a web/BLE read.** `pico/src/buzzer.py`
+plays short named tone patterns for every event a screen would otherwise
+show (Wi-Fi/BLE status, capture start/stop, lap mark, flash warnings, fatal
+errors, factory-reset countdown). `pico/src/webserver.py` serves a single
+abbreviated page (status, start/stop/mark, session list + download, profile
+form — no live graph) and `pico/src/ble_server.py` exposes the same status/
+control/profile surface as a GATT service, for a phone that isn't on the
+same Wi-Fi.
 
-The software runs several asynchronous loops to read from the ADC's, and write to sinks (and monitor button input). Where the sinks are:
+**No SD card — internal flash only, with a hard quota guard.**
+`pico/src/flash_writer.py` stops capture when free flash drops below
+`CONFIG.FLASH_MIN_FREE` (there's no bigger medium to fail over to) rather
+than the reference's SD-vs-flash fallback logic.
 
- 1. A websocket-connected web browser.  
- 2. A file on the device's local filesystem on the flash or sdcard.
- 3. Bluetooth.  
+### Flash budget
 
-There is about 1MByte of flash storage on which to store data locally. Since this is a limited resource and it's possible to corrupt it, the code does not fully populate the store
-to guard against filesystems issues.
+Measured on real hardware (mpy/unfrozen deploy — see "What's verified"
+below): **868 KB** total littlefs filesystem, **~468 KB** free once this
+app's own files are copied on (`main.py`/`boot.py`/`src`/`lib`/`conf`/
+`static` — about 380 KB unfrozen). A frozen `./build.sh` build should claw
+most of that 380 KB back since app code moves into firmware instead of the
+filesystem, but that hasn't been measured yet.
 
-If the device has a WiFi connection to either a local track network, and the Internet the logger software is able to provision the device, unload collected data and stream data in realtime to a browser. A WiFi connection to a browser is used to stream data in real-time
-(using websockets) to a browser.
+At the default 200 Hz (8 bytes/record = 1.6 KB/s ≈ 96 KB/min) and ~468 KB
+free, that's about **5 minutes** of continuous logging on an unfrozen
+deploy. Lower `CONFIG.SAMPLE_RATE_HZ` for longer sessions, download and
+erase sessions between runs via the web UI, or use a frozen build.
 
-The use cases might be as follows:
+---
 
-  1. Track information provisioning.  
-  2. Uploading and persisting locally saved data.  
-  3. Streaming the logged data to a web browser - running either say on a personal device (like a tablet, phone or laptop), or a track server or Internet server or both, or all.  
+## Repository layout
 
-## Device Specifics
+```
+slot-car-data-logger/
+├── Dockerfile, build.sh, manifest.py   # Docker UF2 build (frozen or mpy mode)
+├── Makefile, dist_manifest.py, make_dist.py   # mpremote deploy helpers
+├── tools/decode_log.py                 # host: binary session -> CSV/pandas
+└── pico/
+    ├── boot.py             # pre-main: ErrorBuffer, LED, reset_cause
+    ├── main.py              # entry point — boot stages + all asyncio tasks
+    ├── conf/                # wifi.json(.example), profile.json
+    ├── static/               # abbreviated web UI: index.html/css/js
+    ├── lib/                  # Peter Hinch primitives, Microdot, logging.py
+    ├── src/                  # application source modules
+    └── tests/                # host CPython unit tests (mocks.py)
+```
 
-Notes about the hardware.
+### Key source files
 
-Channels:
+| File | Role |
+|------|------|
+| `src/BOOT.py` | Wi-Fi/BLE start flags, fallback SSID/password — deploy-time editable |
+| `src/CONFIG.py` | Mode, sample rate, flash quota floors — deploy-time editable |
+| `src/adc_device.py` | Core 1 capture — polled `machine.ADC`, no DMA |
+| `src/log_record.py` | 8-byte binary record pack/unpack, lap-marker sentinel, session header |
+| `src/flash_writer.py` | Session file lifecycle + flash quota guard |
+| `src/session_profile.py` | `PROFILE` singleton (track/race/lane/controller/car), persisted JSON |
+| `src/error_buffer.py` | Pre-log circular ring buffer |
+| `src/logconfig.py` | `configure()`/`get_logger()`, flash-only syslog |
+| `src/crash_report.py` | Append-only crash JSON on flash |
+| `src/fatal_handler.py` | Log -> persist -> beeper pattern -> auto-reboot (no CrashScreen) |
+| `src/factory_reset.py` | Headless Button-A-held-at-boot reset, beeper countdown |
+| `src/buzzer.py` | Async `Beeper` — named event tone patterns |
+| `src/wifi_connection.py` | Multi `conf/wifi*.json` search, async connect |
+| `src/ble_server.py` | aioble GATT: device info + logger status/control/profile |
+| `src/webserver.py` | Microdot abbreviated web UI |
+| `dist_manifest.py` | Host — explicit device distribution manifest |
+| `make_dist.py` | Host — build `./dist` from the manifest |
 
-  GP16      - Push button - black  
-  GP17      - External red LED, low = ON  
-  GP18      - External yellow LED, low = ON  
-  GP20      - Piezo sound  
-  GP21      - Piezo sound (inverted) - (low volume sound output in the range 200Hz - 4KHz)  
-  GP22      - Push button - yellow  
-  GP26/ADC0 - Current drawn by the motor through the hand controller  
-  GP27/ADC1 - Output voltage to track and motor from the hand controller  
-  GP28/ADC2 - Track incoming supply voltage  
-  GP29/ADC3 - not used - mcu power  
+---
 
-Notes: 
+## Development setup
 
- 1. Set GP18 to output drive strength 12mA, to minimise volt-drop in the micro (PADS_BANK0: GPIOx Registers)  
+```bash
+pip install mpremote
+```
 
- 2. Worth experimenting with the SMPS mode pin (WL_GPIO1) to find out which
-setting (low or high) gives the least noise in the ADC readings (with
-the little test programme I got around 10 decimal variation, of a 12 bit
-value, in the current zero value)  
+### Flashing MicroPython
 
- 3. Please choose a pin to use as a program loop time indicator,
-toggles from one state to another each time round the loop.  
+Download the **Pico W** firmware (not Pico 2 W) from
+`https://micropython.org/download/RPI_PICO_W/` — the W variant is required
+for `aioble` and the CYW43 Wi-Fi/BLE driver. Hold BOOTSEL while connecting
+USB, copy the `.uf2` onto the drive that appears.
 
- 4. The original intention for the yellow push button was to calibrate the zero
-current value (nominal 1/2 the micro 3V3 supply) with the black output
-lead disconnected, but it could also be used to calibrate the voltage
-signals by setting them to an exact 12.00V.  
+```python
+import sys; print(sys.version)   # v1.21 or later — BLE (aioble) needs it
+help("modules")                   # aioble/... must be listed
+```
+
+### Installing dependencies
+
+```python
+import mip
+mip.install("github:peterhinch/micropython-async/v3/primitives")
+mip.install("github:miguelgrinberg/microdot")
+```
+
+`pico/lib/` already vendors the exact files this project uses (Peter
+Hinch's `primitives` — `pushbutton`, `ringbuf_queue`, `queue`, `delay_ms` —
+and a trimmed Microdot — `microdot.py`, `websocket.py`, `helpers.py`), so
+`make deploy` ships them without needing `mip` on the device at all.
+
+### Credentials
+
+```bash
+cp pico/conf/wifi.json.example pico/conf/wifi.json
+# edit pico/conf/wifi.json with real credentials
+```
+
+`wifi_connection.py` searches `conf/` for every `wifi*.json` file (not just
+`wifi.json`) and tries each in turn — handy for carrying more than one
+trackside AP's credentials on the device at once. `conf/wifi.json` and any
+`conf/wifi-*.json` are gitignored; only `wifi.json.example` is committed.
+
+### Deploying to the device
+
+```bash
+make dist         # build ./dist from dist_manifest.py
+make deploy        # build ./dist and copy it to the device (recommended)
+make sync          # copy src/ and tests/ only — lighter weight, for iteration
+make clean         # remove src/tests/lib/static/conf from the device
+```
+
+`dist_manifest.py` is the single source of truth for what ships. Unlike the
+Pico 2 W reference's `make_dist.py --check`, there is no automated
+reachability drift-check here — keep the manifest in sync with `pico/src/`
+and `pico/lib/` by hand.
+
+### Building a UF2 (Docker)
+
+```bash
+./build.sh          # frozen mode (default) -> output/firmware.uf2
+./build.sh mpy       # firmware.uf2 + output/*.mpy for dev iteration
+```
+
+`manifest.py` freezes the stable application modules into firmware;
+`BOOT.py`, `CONFIG.py`, and `main.py` stay on the filesystem so they're
+editable without a reflash (same reasoning as the reference).
+
+---
 
 ## Testing
 
-Connections:
+Host-side tests run on CPython, no device needed:
 
-  White +ve supply
-  Red -ve supply
-  Black + output to motor
+```bash
+make host-test
+# or directly:
+python3 pico/tests/run_tests.py
+```
 
-Simplest test: connect white & red 4mm banana plugs of the logger to the PSU & vary the power supply voltage from 8V to 18V. The supply voltage signal should vary, the black output should read zero & the current a mid range value corresponding to zero current.
+`pico/tests/mocks.py` stubs `machine`, `network`, `aioble`, `bluetooth`,
+`_thread`, `CONFIG`, `BOOT` for modules that need them. `log_record.py`,
+`flash_writer.py`, and `error_buffer.py` have no hardware imports at all and
+are tested directly.
 
-Next level: connect the controller to the 4mm sockets, operate the trigger & now the black output signal should vary.
+| Test file | Covers |
+|-----------|--------|
+| `test_log_record.py` | Record/header pack-unpack, clipping, lap-marker sentinel |
+| `test_flash_writer.py` | Session lifecycle, quota guard, rotation |
+| `test_error_buffer.py` | Pre-log ring buffer |
+| `test_logconfig.py` | `configure()`/`get_logger()`, flash-only syslog |
 
-Final level: now add a motor (motor+ to the 4mm black banana from the logger, motor- to PSU - with 4mm red banana from logger) and operate the trigger, the current signal should now vary as well. But it will be small as the range is +/- 50A.
+### What's verified on hardware
 
-## Connecting to WiFi
+Deployed (unfrozen, via `make deploy`) to a real Pico W running MicroPython
+v1.28.0 (`RPI_PICO_W` build) and exercised over `mpremote`, including a real
+home Wi-Fi network:
 
-Most tracks do not have WiFi or access to the internet, therefore you'll need to provision something yourself. 
-If you have a decent cellular connection you can try setting up your phone as a personal hotspot.
+- Full `main.py` boot sequence completes cleanly and fast (all stages, every
+  task launched within ~1 s of reset), both with and without Wi-Fi config
+  present — `wifi_connection.py` skips gracefully with no config, connects
+  in ~1 s with it.
+- Core 1's polled `adc_device.py` sustains the configured rate: consistently
+  ~195-200 samples/s at `SAMPLE_RATE_HZ=200` over multi-minute runs. Raw
+  `ADC(26/27/28).read_u16()` reads returned plausible values with no sensor
+  board attached (near-zero on the floating voltage dividers, mid-scale on
+  the bipolar current sensor's bias point).
+- **Full web UI round-trip**: `GET /`, `GET /api/status`, `POST /api/start`
+  `/stop`/`/mark`, `GET /api/sessions`, raw session download, and the
+  on-the-fly CSV conversion endpoint all tested with real `curl` requests
+  against the live device and returned correct data. A session created via
+  the web API (`start` → `mark` → `stop`) produced a file whose byte size
+  matched the binary format's math exactly.
+- `flash_writer.py` end-to-end on real littlefs, both via a direct on-device
+  script and via the web API: session files open/close/write correctly,
+  and `tools/decode_log.py` correctly decodes a real device-written file
+  pulled back over HTTP, including a lap marker row.
+- `ble_server.py` genuinely advertises (`bluetoothctl scan` from a Linux
+  host found `SCLogger-e6614c`) when Wi-Fi isn't up — full GATT
+  characteristic read/write from a client app wasn't tested, only
+  advertisement discovery.
+- `fatal_handler.py`'s crash pipeline: caught and persisted a real
+  `MemoryError` (see below) to `/syslog/crashes/` exactly as designed.
+- `buzzer.py` constructs its PWM objects and sets tones without raising —
+  not confirmed audibly (no way to hear it remotely).
 
-The wifi.json file can be edited to contain the local wifi connection settings. Alternatively any file named wifi-*.json 
-can contain a wifi setting all of which are searched on startup. If no connection is established the code does not 
-start a web server. 
+**Found and fixed on hardware** (three related issues, same root cause —
+this board has 264 KB of RAM and no headroom to spare):
 
-The IP address of the connection is put in the BT device information by appending it to front of the conventional 
-Firmware Revision String bluetooth characteristic of the Service Device Information.
+1. Importing `ble_server` then `webserver` back-to-back with no
+   `gc.collect()` raised `MemoryError` — `microdot.py` is one large
+   (~2000-line) module and compiling it live needs a big contiguous
+   allocation a fragmented heap can't satisfy. Fixed with `gc.collect()`
+   immediately before each heavy import.
+2. That fix wasn't sufficient once Wi-Fi *and* BLE *and* the ADC pipeline
+   were all genuinely active simultaneously (not just fragmentation — real
+   concurrent memory pressure). Fixed by precompiling `microdot.py` and
+   `webserver.py` to `.mpy` bytecode with `mpy-cross` (committed under
+   `pico/lib/microdot/microdot.mpy` and `pico/src/webserver.mpy` —
+   `dist_manifest.py` ships these instead of the `.py` source; regenerate
+   after editing either source per the comments there).
+3. Even precompiled, running the Wi-Fi web server and BLE GATT server
+   *concurrently* still sat right at this board's capacity under a
+   non-frozen deploy. Rather than keep shaving bytes, `main.py` now treats
+   BLE as a **fallback**: it only starts if Wi-Fi isn't configured or fails
+   to connect, never alongside a working web UI. A frozen `./build.sh`
+   build should have more headroom (frozen modules don't need this
+   precompile trick, or the live-compile RAM spike at all) and might lift
+   this restriction, but that hasn't been measured — see "still
+   unverified" below.
 
-You can also consider setting up your own WiFi network on your phone. On an iPhone 
-edit the "Settings->General->About->Name" to "slotcar" and then navigate to: "Settings->Personal Hotspot->Wi-Fi Password" and set it to "slot-car" In the personal hotspot set on "Allow Others to Join" and "Maximum Compatibility" This second setting is important because the radio in the Pi only operates on 2.4GHz
+**Operational lesson for future debugging on this board**: interrupting a
+running Wi-Fi/BLE session with Ctrl-C (`mpremote ... resume exec`) rather
+than a real hardware reset (`machine.reset()`, or reconnecting *without*
+`resume` to get mpremote's DTR-toggle reset) does not cleanly tear down
+lwIP sockets or CYW43 state. Several apparent bugs during this bring-up
+(spurious `ENOMEM` on a bare `asyncio.start_server()`, a phantom
+`TypeError` that didn't reproduce) turned out to be resource leakage from
+repeated Ctrl-C interrupts, not real defects — always verify a suspicious
+hardware failure against a *genuinely* clean reset before trusting it.
 
-Once you've done this leave the Personal Hotspot open and wait for the logger to connect. Note: every time it fails to make a WiFi connection it reboots and plays a tune. Therefore you can plug it in and play with the WiFi settings until it successfully connects.
+### What's still unverified
 
-Of course this means there can only be a single network names "slotcar" in the vicinity and everyone's logger shall connect to it. However, without an easy way to set each specific-logger's preferred AP name, (using Bluetooth?) we are stuck with this.
+- Physical button presses (GP15/GP17) — no way to press them remotely.
+- Beeper tones audibly, only that PWM calls don't raise.
+- BLE GATT characteristic read/write from a real client app — only
+  advertisement discovery was confirmed, not a full connection (and BLE
+  now only runs when Wi-Fi is absent, so this needs a Wi-Fi-less test).
+- Flash budget and the Wi-Fi+BLE-concurrently restriction under a
+  **frozen** `./build.sh` build — only the unfrozen `make deploy` footprint
+  has been measured; frozen modules don't pay the live-compile RAM cost
+  this session's fixes work around, so a frozen build might not need the
+  BLE-as-fallback restriction at all. Untested — no Docker available in
+  this environment.
 
-Another alternative would be to have a WiFi access point stationed permanently at the track with it obtaining its access to the Inet from a personal hotspot. Although this is really not much better than the previous solution - except perhaps it might offer better range.
+---
 
- The use case would be: someone would "volunteer" to provide Inet access to the Ap, by setting their phone to a conventional name, the Ap then would be paired with the hot spot and the loggers would attach to the Ap. An AP with two radios and appropriate software (like OpenWRT) is needed to arrange this. It would broadcast its SSID as "slotcar" (slot-car) and there would be another conventional name for the hotspot for the AP to connect to - say "slot-car-hotspot"``
- 
- 
- ## Design Notes
+## Session binary format
 
-Use the yellow button for toggling the collection of data to a local log file, the black for toggling between
-playback of the latest log file and relatime data. 
+One file per Button-A on/off cycle under `/data`, `session_YYYYMMDD_HHMMSS.bin`:
 
-The piezo is only used to play a little tune at startup. Despite doubling its volume by inverting the second pin 
-to which it's connected, its sound output is not really loud enough 
-to overcome ambient noise at the track 
-for feedback. 
+```
+[header: magic 'SCL1', version, start_epoch, sample_rate_hz, profile JSON]
+[record]*    8 bytes each: dt_ms(u16), current_cA(i16), track_cV(u16), supply_cV(u16)
+```
 
-Tracks don't often have WiFi. There is commented out code to stream data to Bluetooth, however this will require a 
-graphing client. There are different ways to do this, namely:
+A lap marker (Button B) is a record with `current_cA == -32768`. Convert to
+CSV or a pandas DataFrame with `tools/decode_log.py`:
 
-  1. Stream data over the BT client to a local (or remote) server on a local network that may or may not 
-  be connected to the Inet, and display it from a Web server running on it.
-  2. Use experimental browser extensions to connect to BT and display data in a browser
-  - however the browser will still need a network connection.
- 
-Input the number of lanes and my lane number on a short button press.
+```bash
+python3 tools/decode_log.py session_20260101_120000.bin -o session.csv
+python3 tools/decode_log.py session_20260101_120000.bin --pandas
+```
 
-With a network connection file(s) can be opened and the ADC inputs can be started, then the web server started to
-serve up the collected data.
+Or fetch it straight from the device over the web UI — every session in the
+list has a `csv` download link that runs the same conversion on-device.
 
-## Getting Running
+---
 
-The Pi is running the latest release (1.21) of MicroPython. More about it here: https://projects.raspberrypi.org/en/projects/get-started-pico-w/1 The code depends on various MicroPython libraries that are updated using the mip utility.
+## Buttons and beeper
 
-With a modern version of Windows (or MacOS or Linux) you can plug the board into the computer using a USB cable and talk to it as a serially connected USB device.
+| Button | Action |
+|--------|--------|
+| A (GP15) | Toggle capture on/off (new session file per on/off cycle); held at power-on: factory reset |
+| B (GP17) | Lap marker — only while capturing |
 
-Use the Thonny IDE https://thonny.org/ to connect and access the device.
+| Beeper pattern | Meaning |
+|-----------------|---------|
+| Rising 3-note | Boot ready |
+| Two ascending notes | Wi-Fi connected |
+| Two low notes | Wi-Fi connect failed |
+| Two-note chirp | BLE central connected |
+| Single high note | Capture started |
+| Single mid note | Capture stopped |
+| Very short high blip | Lap marker |
+| Two-note warble | Flash getting low |
+| Three low notes | Flash full — capture stopped |
+| Three low notes, repeating | Fatal error (repeats until auto-reboot) |
+| Short tick, once per second | Factory-reset countdown (Button A held at boot) |
 
-There are several python files on the disk and some directories.
+---
 
-There are some directories too - such as:
+## Abbreviated UI
 
-  - lib - holds support libraries  
-  - static - html files
-  - js - javascript libraries
-  
+- **Web** (Wi-Fi): status, Start/Stop/Mark, session list with raw or CSV
+  download, erase-all, a profile form (track/race/lane/controller/car), and
+  an optional `/ws` feed of plain numeric readings — no live graph.
+- **BLE**: a Device Information service (with the current IP address folded
+  into the firmware-revision characteristic, so a phone paired over BLE but
+  not on the same Wi-Fi can still find the web UI) and a custom Logger
+  service with status (notify), control (write: start/stop/mark), and
+  profile (read/write/notify) characteristics.
 
-Use the Thonny editor to create a wifi.json file.
-Start the code by ctl-D
-Debugging statements appear in the log.
-It'll display the IP address to which it's connected. Point a browser at this address.
-   
+BLE is a **fallback**, not run alongside a working Wi-Fi connection: it
+only starts if Wi-Fi isn't configured or fails to connect. Confirmed on
+hardware that running both plus the ADC pipeline at once is right at this
+264 KB-RAM board's capacity under a non-frozen deploy — see "What's
+verified on hardware" for the measurements this is based on. Most tracks
+have no Wi-Fi at all (per the earlier prototype's own notes), so BLE
+covers exactly the case where it matters.
 
-### TODO:
+---
 
-There is always more to do - however it's limited by the amount of memory. We are already very close to using all there is and some optimizations have been made.
+## References
 
- 1. Remotely turn on debugging and save a debug log to the file system, rotate and erase it. Access from a web page.
- 2. Save data in the browser, replay in the browser, delete browser database
- 3. A standalone client to capture data to a file on the host - wget/curl - an app./webserver to render it.
- 4. Export log files to a server page - both http and bluetooth
- 5. Replay exported log files on a server.
- 6. Alter the graphing parameters to slow down/expand the x scale.  
- 7. Calibration - not just on startup but controlled say on some specific (long) button press.  
- 8. Track and lane data read from a host.
- 9. GPS module to determine the track from the track database.
- 10. Tracks stored on host in track database.
- 11. Download the current track as json from track database.
- 12. Select a specific locally saved log file, delete a log file.
- 13. Annotate a log file: car/track/controller (settings)
- 14. BT client to control the app.
- 15. BT client to graph rt and saved file.
- 16. Mount sd in boot and save data to a sd card.
- 
-
-### Use Case
-
- 1. Turn up at a specific track 
-    How:
-      Prior to visit - power logger.
-      Add track by: downloadiong track or editing track database or using bluetooth app
-      Specify a specific track to use
- 2. Plug in to a specific lane
- 3. Intermittently run logger
- 4. Change lane ...
- 5. Review log data. Annotate data.
- 6. Erase or archive log data
+- Peter Hinch async primitives: <https://github.com/peterhinch/micropython-async>
+- Microdot: <https://github.com/miguelgrinberg/microdot>
+- RP2040 datasheet (PWM push-pull, ADC): <https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf>
+- The Pico 2 W reference this project downgrades: <https://github.com/aartech-dev/logger>

@@ -1,3 +1,8 @@
+# Slot Car Logger (Pico W) — real Wi-Fi credentials and build output, never committed
+pico/conf/wifi.json
+pico/conf/wifi-*.json
+output/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -15,6 +20,8 @@ downloads/
 eggs/
 .eggs/
 lib/
+!pico/lib/
+!pico/lib/**
 lib64/
 parts/
 sdist/
