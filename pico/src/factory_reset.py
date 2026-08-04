@@ -1,9 +1,12 @@
 # Copyright @ 2026 Adrian Blakey. All rights reserved
 # factory_reset.py — headless factory reset (button A held at boot).
 #
-# The Pico 2 W reference shows a GUI countdown (ResetScreen widget) when
-# GP15 is held at boot. There is no display here, so the countdown is
-# communicated with the piezo beeper instead, using blocking time.sleep_ms()
+# The Pico 2 W reference shows a GUI countdown (ResetScreen widget) when its
+# Button A is held at boot. This board's Button A is GP16, not the
+# reference's GP15 (confirmed on hardware — GP15 is unconnected here; GP16
+# is the actual wired button, inherited from the earlier prototype). There
+# is no display here, so the countdown is communicated with the piezo
+# beeper instead, using blocking time.sleep_ms()
 # — this runs from main.py's boot sequence BEFORE asyncio.run() starts, so
 # there is nothing else on the board for it to block, and it deliberately
 # does not depend on buzzer.Beeper (an asyncio-driven class) for that reason.
@@ -33,7 +36,7 @@ _DEFAULTS = {
         'LOG_TO_FLASH = True\n'
         'CRASH_PERSIST_JSON = True\n'
         'CRASH_AUTO_REBOOT_MS = 120_000\n'
-        'REBOOT_BUTTON_PIN = 15\n'
+        'REBOOT_BUTTON_PIN = 16\n'
         'SAMPLE_RATE_HZ = 200\n'
         'FLASH_MIN_FREE = 32768\n'
         'FLASH_LOW_WARN = 98304\n'
@@ -59,7 +62,7 @@ def _confirmed() -> None:
         time.sleep_ms(30)
 
 
-def check_and_run(pin_num: int = 15, errbuf=None) -> None:
+def check_and_run(pin_num: int = 16, errbuf=None) -> None:
     """
     Synchronous and blocking — call BEFORE asyncio.run() in main.py.
 

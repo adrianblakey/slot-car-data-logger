@@ -101,7 +101,7 @@ _core1_fault_ts: _TSF = _TSF()
 # Stage 3 — Factory reset
 # ══════════════════════════════════════════════════════════════════════════
 def _check_factory_reset() -> None:
-    _factory_reset_check(pin_num=15, errbuf=errbuf)
+    _factory_reset_check(pin_num=16, errbuf=errbuf)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -267,10 +267,14 @@ def _on_btn_b_short() -> None:
 
 async def _buttons_task() -> None:
     log.info("Button task started")
-    # GP15 doubles as the factory-reset pin, checked synchronously before
+    # GP16 doubles as the factory-reset pin, checked synchronously before
     # asyncio starts (see _check_factory_reset) — safe to reuse at runtime.
-    btn_a = Pushbutton(Pin(15, Pin.IN, Pin.PULL_UP), suppress=True)
-    btn_b = Pushbutton(Pin(17, Pin.IN, Pin.PULL_UP), suppress=True)
+    # Pin numbers match this board's actual wiring (confirmed on hardware
+    # by watching raw pin state while pressing each button — GP16 = black/A,
+    # GP22 = yellow/B), inherited from the earlier prototype; NOT the Pico 2 W
+    # reference's GP15/GP17, which are unconnected on this board.
+    btn_a = Pushbutton(Pin(16, Pin.IN, Pin.PULL_UP), suppress=True)
+    btn_b = Pushbutton(Pin(22, Pin.IN, Pin.PULL_UP), suppress=True)
     btn_a.release_func(_on_btn_a_short)
     btn_b.release_func(_on_btn_b_short)
     try:

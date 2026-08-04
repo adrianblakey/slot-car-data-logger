@@ -31,17 +31,19 @@ to and exercised on a real Pico W. See "What's verified on hardware" and
 
 | GPIO | Signal | Notes |
 |------|--------|-------|
-| GP15 | Button A | Short press: toggle capture. Held at boot: factory reset. |
-| GP17 | Button B | Short press: lap marker (only while capturing). |
+| GP16 | Button A (black) | Short press: toggle capture. Held at boot: factory reset. |
+| GP22 | Button B (yellow) | Short press: lap marker (only while capturing). |
 | GP20 | Beeper (piezo +) | PWM slice 2A |
 | GP21 | Beeper (piezo -, inverted) | PWM slice 2B, driven out of phase for volume |
 | GP26 | ADC0 — track current | LEM CASR 50-NP, bipolar |
 | GP27 | ADC1 — track voltage | Resistive divider |
 | GP28 | ADC2 — supply voltage | Resistive divider |
 
-Every GPIO the Pico 2 W reference spends on the display and nav buttons
-(GP2/3/16/18/20 for micro-gui, GP4-13 for SPI0/SPI1 display+SD) is free on
-this board — only the pins above are claimed.
+Button and beeper pins match this board's actual physical wiring, carried
+over from the earlier prototype (confirmed on hardware — see "What's
+verified on hardware"), **not** the unrelated Pico 2 W reference board's
+pin choices. GP15/17/18 and the reference's display/SD/nav pins
+(GP2/3/4-13) are all unconnected and free on this board.
 
 ---
 
@@ -261,9 +263,15 @@ home Wi-Fi network:
   `MemoryError` (see below) to `/syslog/crashes/` exactly as designed.
 - `buzzer.py` constructs its PWM objects and sets tones without raising —
   not confirmed audibly (no way to hear it remotely).
+- **Physical button presses**: with the GP16/GP22 pin fix (see below), a
+  real press of Button A logged "Recording ON" and opened a session file;
+  Button B logged "Lap marker armed"; a second press of Button A logged
+  "Recording OFF" and closed the session. The resulting file was pulled
+  off the device and decoded — exactly one marker row, in the right
+  position, with the rest of the data intact.
 
-**Found and fixed on hardware** (three related issues, same root cause —
-this board has 264 KB of RAM and no headroom to spare):
+**Found and fixed on hardware** (four issues; the first three share a root
+cause — this board has 264 KB of RAM and no headroom to spare):
 
 1. Importing `ble_server` then `webserver` back-to-back with no
    `gc.collect()` raised `MemoryError` — `microdot.py` is one large
@@ -286,6 +294,15 @@ this board has 264 KB of RAM and no headroom to spare):
    precompile trick, or the live-compile RAM spike at all) and might lift
    this restriction, but that hasn't been measured — see "still
    unverified" below.
+4. **Button presses had no effect** — GP15/GP17 (Button A/B in the initial
+   design) turned out to be unconnected on this board. This project's pin
+   choices had wrongly copied the *unrelated* Pico 2 W reference board's
+   button pins instead of this device's actual physical wiring. Confirmed
+   by watching raw pin state on the live device while pressing each
+   button: GP16 and GP22 are the real ones (matching the earlier
+   prototype's own hardware notes, which documented this correctly all
+   along — GP16 black / GP22 yellow). Fixed in `main.py`, `CONFIG.py`
+   (`REBOOT_BUTTON_PIN`), and `factory_reset.py`'s default pin.
 
 **Operational lesson for future debugging on this board**: interrupting a
 running Wi-Fi/BLE session with Ctrl-C (`mpremote ... resume exec`) rather
@@ -299,7 +316,6 @@ hardware failure against a *genuinely* clean reset before trusting it.
 
 ### What's still unverified
 
-- Physical button presses (GP15/GP17) — no way to press them remotely.
 - Beeper tones audibly, only that PWM calls don't raise.
 - BLE GATT characteristic read/write from a real client app — only
   advertisement discovery was confirmed, not a full connection (and BLE
@@ -339,8 +355,8 @@ list has a `csv` download link that runs the same conversion on-device.
 
 | Button | Action |
 |--------|--------|
-| A (GP15) | Toggle capture on/off (new session file per on/off cycle); held at power-on: factory reset |
-| B (GP17) | Lap marker — only while capturing |
+| A / black (GP16) | Toggle capture on/off (new session file per on/off cycle); held at power-on: factory reset |
+| B / yellow (GP22) | Lap marker — only while capturing |
 
 | Beeper pattern | Meaning |
 |-----------------|---------|

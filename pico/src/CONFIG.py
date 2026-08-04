@@ -13,7 +13,7 @@ LOG_TO_FLASH         = True
 
 CRASH_PERSIST_JSON   = True
 CRASH_AUTO_REBOOT_MS = 120_000   # 2 minutes
-REBOOT_BUTTON_PIN    = 15        # held at boot -> factory reset
+REBOOT_BUTTON_PIN    = 16        # held at boot -> factory reset (Button A's pin)
 
 # ── ADC capture ────────────────────────────────────────────────────────────
 # Published sample rate. See README "Flash budget" for the space/duration
