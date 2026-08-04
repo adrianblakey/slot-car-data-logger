@@ -261,8 +261,10 @@ home Wi-Fi network:
   advertisement discovery.
 - `fatal_handler.py`'s crash pipeline: caught and persisted a real
   `MemoryError` (see below) to `/syslog/crashes/` exactly as designed.
-- `buzzer.py` constructs its PWM objects and sets tones without raising —
-  not confirmed audibly (no way to hear it remotely).
+- **Beeper, audibly**: with the fixes below, all 12 named patterns
+  (`boot_ready`, `wifi_connected`, ..., `reset_confirmed`) were played on
+  the live device and confirmed heard as distinct tones with silent gaps
+  between them — no clicking, no dropouts.
 - **Physical button presses**: with the GP16/GP22 pin fix (see below), a
   real press of Button A logged "Recording ON" and opened a session file;
   Button B logged "Lap marker armed"; a second press of Button A logged
@@ -270,7 +272,7 @@ home Wi-Fi network:
   off the device and decoded — exactly one marker row, in the right
   position, with the rest of the data intact.
 
-**Found and fixed on hardware** (four issues; the first three share a root
+**Found and fixed on hardware** (six issues; the first three share a root
 cause — this board has 264 KB of RAM and no headroom to spare):
 
 1. Importing `ble_server` then `webserver` back-to-back with no
@@ -303,6 +305,26 @@ cause — this board has 264 KB of RAM and no headroom to spare):
    prototype's own hardware notes, which documented this correctly all
    along — GP16 black / GP22 yellow). Fixed in `main.py`, `CONFIG.py`
    (`REBOOT_BUTTON_PIN`), and `factory_reset.py`'s default pin.
+5. **Beeper was completely silent** — `PWM.freq()` rewrites the whole PWM
+   CSR register as a side effect of reprogramming the clock divider,
+   clearing the INVB (push-pull invert) bit set at construction. Since
+   every note change calls `.freq()`, the invert was cleared on the very
+   first note and never restored: both channels ended up driven in phase,
+   and the differentially-wired piezo saw ~zero net voltage swing. Fixed
+   by re-asserting INVB after every `.freq()` call, not just once at
+   construction (confirmed via a direct CSR register readback on
+   hardware, not just by ear).
+6. **Beeper clicked instead of sounding "silence" between notes** — the
+   fix for #5 briefly used a low (10 Hz) "quiet" frequency for the gaps
+   between notes, which is audible as clicking, not silence. Tried
+   silencing via `duty_u16(0)`/`duty_u16(32768)` toggling instead, which
+   made things *worse*: it left the slice unable to produce a proper
+   sustained tone afterwards (every note became a single click instead of
+   holding pitch) for reasons not fully root-caused. Settled on the
+   simplest thing confirmed to work cleanly on hardware: duty is set once
+   at construction and never touched again; "silence" is 20 kHz (above
+   typical adult hearing) instead of a low audible frequency — `_tone()`
+   only ever calls `.freq()`.
 
 **Operational lesson for future debugging on this board**: interrupting a
 running Wi-Fi/BLE session with Ctrl-C (`mpremote ... resume exec`) rather
@@ -316,7 +338,6 @@ hardware failure against a *genuinely* clean reset before trusting it.
 
 ### What's still unverified
 
-- Beeper tones audibly, only that PWM calls don't raise.
 - BLE GATT characteristic read/write from a real client app — only
   advertisement discovery was confirmed, not a full connection (and BLE
   now only runs when Wi-Fi is absent, so this needs a Wi-Fi-less test).

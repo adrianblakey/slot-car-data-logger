@@ -39,21 +39,42 @@ _PIN_B = 21
 # writing there OR's the given bits into the register instead of overwriting
 # it, so this sets INVB (bit 3) without disturbing the EN bit the PWM driver
 # already set.
+#
+# Confirmed on hardware: MicroPython's PWM.freq() rewrites the whole CSR
+# register as a side effect of reprogramming the clock divider, clearing
+# INVB along with everything else — so it must be re-asserted after EVERY
+# freq() call, not just once at construction (a total silence bug: without
+# this, the two channels end up in phase, and a differentially-wired piezo
+# sees ~zero net voltage swing between them).
 _PWM2_CSR_SET = 0x40050000 + 0x14 * 2 + 0x2000
 _INVB = 1 << 3
 
-_QUIET_FREQ = 10   # "silence" — 0 Hz freq() is rejected on some ports
+# "Silence" is a frequency, not a duty change. Two things confirmed on
+# hardware the hard way:
+#   - A low "quiet" frequency (originally 10 Hz) is NOT silent — a piezo
+#     audibly clicks at a few Hz.
+#   - Toggling duty_u16 to 0 and back to resume is worse: it leaves the
+#     slice unable to produce a proper sustained tone afterwards (every
+#     subsequent note plays as a single click instead of holding its
+#     pitch), for reasons not fully understood but clearly reproducible.
+#     Duty is set ONCE at construction and never touched again; freq() is
+#     the only thing _tone() ever changes.
+# 20 kHz is above typical adult hearing and was confirmed silent (or at
+# least not perceived as clicking) on real hardware between audible tones.
+_QUIET_FREQ = 20_000
+_DUTY = 32768   # 50% — set once at construction, never touched again
 
 
 class Beeper:
     def __init__(self):
-        self._a = PWM(Pin(_PIN_A), duty_u16=32768, freq=1000)
-        self._b = PWM(Pin(_PIN_B), duty_u16=32768)
+        self._a = PWM(Pin(_PIN_A), duty_u16=_DUTY, freq=1000)
+        self._b = PWM(Pin(_PIN_B), duty_u16=_DUTY)
         mem32[_PWM2_CSR_SET] = _INVB   # push-pull: drive B out of phase with A
         self._busy = False
 
     def _tone(self, name):
         self._a.freq(_TONES[name] if name else _QUIET_FREQ)
+        mem32[_PWM2_CSR_SET] = _INVB   # re-assert — freq() just cleared it
 
     async def _play(self, notes):
         if self._busy:
