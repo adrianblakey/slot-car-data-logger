@@ -73,10 +73,15 @@ deploy: dist
 	@echo "  first, or use mpremote to create it directly on the device."
 
 # ── sync: copy src/ and tests/ to the device ────────────────────────────────
+# `cp -r LOCALDIR :src` when :src already exists (true for any device past
+# its first deploy) nests into :src/src/* instead of overwriting :src/* —
+# confirmed on hardware chasing a "my redeployed code isn't running" bug.
+# Match deploy's already-correct pattern: cp -r into the PARENT (:), letting
+# the local dir's own basename (src/tests) become the top-level name.
 sync:
 	@echo "Syncing source and tests to Pico..."
-	mpremote connect $(DEVICE) fs cp -r $(SRC_DIR)  :src
-	mpremote connect $(DEVICE) fs cp -r $(TEST_DIR) :tests
+	mpremote connect $(DEVICE) fs cp -r $(SRC_DIR)  :
+	mpremote connect $(DEVICE) fs cp -r $(TEST_DIR) :
 	@echo "Sync complete."
 
 # ── host-test: run test suite on this machine (no device needed) ───────────
