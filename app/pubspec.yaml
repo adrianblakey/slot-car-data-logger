@@ -19,7 +19,11 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.12.2
+  # flutter create pinned this to the exact host SDK patch (3.12.2) at
+  # project creation; relaxed since nothing here needs that specific
+  # patch — the Docker Android build (build-android.sh) uses an image
+  # shipping Dart 3.12.0, and ^3.12.2 would reject it for no real reason.
+  sdk: ^3.12.0
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions

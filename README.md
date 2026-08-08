@@ -770,6 +770,33 @@ flutter pub get
 flutter run              # needs a connected/emulated phone
 ```
 
+### Android build (Docker)
+
+`app/build-android.sh` builds the Android APK inside
+[`ghcr.io/cirruslabs/flutter`](https://github.com/cirruslabs/docker-images-flutter),
+a self-contained image with its own Flutter SDK, Android SDK, NDK, and
+pre-accepted licenses. This exists because building against this
+project's host Android SDK (a shared, root-owned install) needed three
+separate `sudo chown` passes to get writable — see "What's verified"
+below. The container needs none of that:
+
+```bash
+cd app
+./build-android.sh              # debug (default)
+./build-android.sh release      # release, signed with the debug keystore
+```
+
+Output lands at `app/build-out/app-<mode>.apk`. First run pulls the base
+image (several GB); after that only the app layer rebuilds. Confirmed on
+this machine: `flutter pub get` + `analyze` + `test` + `build apk --debug`
+all pass inside the container, producing a real, installable APK — same
+outcome as the host build, without touching `/opt/android-sdk` at all.
+
+iOS has no equivalent — Xcode only runs on macOS, so no Docker image (on
+Linux, at least) can produce an iOS build. That needs a real Mac or a
+cloud CI service that provisions Apple hardware (Codemagic and GitHub
+Actions' `macos-latest` runners both work for Flutter).
+
 Key files:
 
 - `lib/ble_protocol.dart` — UUIDs, command bytes, and payload
@@ -782,16 +809,22 @@ Key files:
   — the three screens.
 
 **What's verified**: `flutter analyze` and `flutter test` both pass clean,
-and `flutter build apk --debug` succeeds (a real, installable
-`app-debug.apk` is produced). Getting the Android build working on this
-machine's shared, root-owned SDK install needed some one-time environment
-fixes worth knowing about if this is rebuilt elsewhere: `compileSdk` here
-tracks Flutter's default rather than the `permission_handler_android`
-plugin's, because that plugin's 14.0.0 release hardcodes `compileSdk 37`
-and only a `37.0`-suffixed preview build of that platform exists in the
-SDK repo (no bare `android-37` yet) — see `pubspec.yaml`'s
-`dependency_overrides` pinning `permission_handler_android` back to
-12.0.13 (`compileSdk 34`) instead.
+and `flutter build apk --debug` succeeds — both directly against this
+machine's host Android SDK and inside the Docker image above — producing
+a real, installable `app-debug.apk` either way. Two environment quirks
+worth knowing about if this is rebuilt elsewhere:
+
+- `compileSdk` here tracks Flutter's default rather than the
+  `permission_handler_android` plugin's, because that plugin's 14.0.0
+  release hardcodes `compileSdk 37` and only a `37.0`-suffixed preview
+  build of that platform exists in the SDK repo (no bare `android-37`
+  yet) — see `pubspec.yaml`'s `dependency_overrides` pinning
+  `permission_handler_android` back to 12.0.13 (`compileSdk 34`) instead.
+- `pubspec.yaml`'s `environment: sdk:` is `^3.12.0`, not the `^3.12.2`
+  that `flutter create` originally pinned to the host's exact Dart
+  version — the Docker image ships Dart 3.12.0, and nothing here actually
+  needs 3.12.2's specific features, so the constraint was relaxed rather
+  than chasing a matching container image.
 
 **What's not verified**: no physical iPhone or Android phone was available
 in the development environment (only the Pico W itself, over USB serial),
