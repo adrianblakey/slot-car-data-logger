@@ -86,9 +86,19 @@ than the reference's SD-vs-flash fallback logic.
 Measured on real hardware (mpy/unfrozen deploy — see "What's verified"
 below): **868 KB** total littlefs filesystem, **~468 KB** free once this
 app's own files are copied on (`main.py`/`boot.py`/`src`/`lib`/`conf`/
-`static` — about 380 KB unfrozen). A frozen `./build.sh` build should claw
-most of that 380 KB back since app code moves into firmware instead of the
-filesystem, but that hasn't been measured yet.
+`static` — about 380 KB unfrozen). A frozen `./build.sh` build moves most
+of the app's `.py` files out of the filesystem and into firmware instead —
+confirmed the freed-up files are genuinely gone from littlefs (`:src`
+shrinks from 13 files to 2 — `BOOT.py`/`CONFIG.py`, the only ones
+`manifest.py` doesn't freeze) — but a clean *before/after free-space*
+number wasn't captured: the same device had already been through a long
+BLE-testing session (accumulated syslog files, a stray `:tests` directory
+from unrelated Makefile testing) by the time the frozen build was
+flashed, so free-space bytes measured afterward aren't a fair comparison
+against the unfrozen figure above. The **868 KB total** stayed identical
+frozen vs unfrozen either way (same fixed littlefs partition regardless of
+how much code is frozen) — see "What's verified on hardware" for what
+*was* cleanly measured (free RAM, not free flash) on this build.
 
 At the default 200 Hz (8 bytes/record = 1.6 KB/s ≈ 96 KB/min) and ~468 KB
 free, that's about **5 minutes** of continuous logging on an unfrozen
@@ -230,6 +240,7 @@ are tested directly.
 | `test_flash_writer.py` | Session lifecycle, quota guard, rotation |
 | `test_error_buffer.py` | Pre-log ring buffer |
 | `test_logconfig.py` | `configure()`/`get_logger()`, flash-only syslog |
+| `test_session_profile.py` | Load/save/update, `rotate_lane`/`toggle_race` |
 
 ### What's verified on hardware
 
@@ -283,8 +294,35 @@ home Wi-Fi network:
   "Recording OFF" and closed the session. The resulting file was pulled
   off the device and decoded — exactly one marker row, in the right
   position, with the rest of the data intact.
+- **Frozen `./build.sh` build — Docker built, flashed, and boot-verified**
+  for the first time (every earlier mention of this build mode says
+  "untested — no Docker available"; that's no longer true). Two Docker
+  permission bugs fixed to get there (see below). With `boot.py` and every
+  `src/` module `manifest.py` freezes actually removed from the
+  filesystem (not just present alongside their frozen copies — MicroPython
+  resolves `/src` before `.frozen` in `sys.path`, so a leftover filesystem
+  copy silently shadows the frozen one and defeats the whole point):
+  measured **131968 bytes free RAM** at the start of `_main()`, vs ~91808
+  under the unfrozen deploy tested earlier — **+40 KB (43%) more
+  headroom**, with no import errors and the pre-log `errbuf`/reset-cause
+  path (which depends on frozen `boot.py` specifically) working correctly.
+- **Wi-Fi + BLE + web server + the ADC pipeline, sustained, under the
+  frozen build**: not just the short round-trip above — a `bleak` central
+  started Wi-Fi over BLE, then polled status every 5 s for **90
+  continuous seconds** with all four subsystems live (ADC publishing
+  throughout), before stopping Wi-Fi over BLE again. Zero disconnects,
+  zero failed reads. One non-fatal warning observed once, right after the
+  Wi-Fi-stop command (`BLE status notify failed: can't convert NoneType
+  to int`, caught by the existing exception handler, self-recovered on
+  the next 2 s status cycle) — not chased down further, noted here rather
+  than silently dropped. This is real evidence the extra frozen-build
+  headroom helps the exact combination the boot-time BLE-as-fallback
+  policy exists to avoid, but it exercised the *dynamic*
+  `CMD_WIFI_START`/`CMD_WIFI_STOP` path (see "BLE-triggered Wi-Fi"), not
+  the boot-time policy itself — that policy is unchanged and still untested
+  under a frozen build (see "What's still unverified").
 
-**Found and fixed on hardware** (eight issues; the first three share a root
+**Found and fixed on hardware** (ten issues; the first three share a root
 cause — this board has 264 KB of RAM and no headroom to spare):
 
 1. Importing `ble_server` then `webserver` back-to-back with no
@@ -359,6 +397,20 @@ cause — this board has 264 KB of RAM and no headroom to spare):
    letting the local directory's own basename become the top-level name —
    confirmed by re-running `make sync` and checking `:src`/`:tests` came
    back flat.
+9. **Frozen build failed at the freeze step: "Permission denied" reading
+   the staged manifest** — `mattrmansfieldtx/micropython-builder` runs as
+   a non-root container user (uid 1001, "app"), but `build.sh`'s
+   `mktemp -d` staging directory is mode `0700` (owner-only), unreadable
+   by a different uid even on a bind mount. Never caught before since
+   Docker wasn't available to actually run this path. Fixed with
+   `chmod -R a+rX "$STAGING_DIR"` right after writing the resolved
+   manifest into it.
+10. **Frozen build then failed copying artifacts out: "Permission denied"
+    writing `output/`** — same root cause as #9, the other direction:
+    `mkdir -p output`'s default mode (`0755`, owner-writable only) doesn't
+    let the container's non-root user write `firmware.uf2` etc. into the
+    bind-mounted host directory. Fixed with `chmod a+rwx output` right
+    after creating it.
 
 **Operational lesson for future debugging on this board**: interrupting a
 running Wi-Fi/BLE session with Ctrl-C (`mpremote ... resume exec`) rather
@@ -372,19 +424,27 @@ hardware failure against a *genuinely* clean reset before trusting it.
 
 ### What's still unverified
 
-- Flash budget and the Wi-Fi+BLE-concurrently restriction under a
-  **frozen** `./build.sh` build — only the unfrozen `make deploy` footprint
-  has been measured; frozen modules don't pay the live-compile RAM cost
-  this session's fixes work around, so a frozen build might not need the
-  BLE-as-fallback restriction at all. Untested — no Docker available in
-  this environment.
-- `CONFIG.WIFI_MIN_FREE_BYTES`'s safety margin under *sustained* BLE+Wi-Fi
-  operation. The BLE-triggered Wi-Fi start/stop round trip itself is now
-  confirmed working end-to-end on hardware (see above) — the check passed,
-  Wi-Fi came up, BLE stayed connected — but that was one short test, not a
-  long-running session with both active and the ADC pipeline under real
-  load. The threshold is still a judgement call, not a measured safe
-  minimum.
+- **The boot-time BLE-as-fallback policy itself, under a frozen build** —
+  `_main()` still never starts Wi-Fi and BLE together at boot regardless
+  of build mode (see "BLE is a fallback at boot" in `CLAUDE.md`), and
+  that policy hasn't been re-tested now that frozen measurably has ~40 KB
+  more headroom (see "What's verified on hardware"). The *dynamic*
+  BLE-triggered Wi-Fi start (which deliberately does run both together)
+  was sustained-tested under frozen and held up for 90 s — that's
+  evidence the combination itself is more comfortable now, but it isn't
+  the same code path as the boot-time decision, which remains
+  conservative on purpose.
+- A clean frozen-vs-unfrozen **flash budget** (free littlefs bytes)
+  comparison — the frozen build was flashed to a device already carrying
+  test-session cruft (accumulated syslogs, a stray directory from
+  unrelated testing), confounding a fair before/after measurement. See
+  "Flash budget" above for what could and couldn't be concluded from it.
+- `CONFIG.WIFI_MIN_FREE_BYTES`'s safety margin under longer than the ~90 s
+  sustained Wi-Fi+BLE+ADC test performed here (see "What's verified on
+  hardware") — that test held up with no disconnects and only one
+  self-recovering non-fatal warning, but a threshold picked by judgement
+  rather than a stress test to failure could still be wrong for longer
+  sessions, more BLE traffic, or heavier web UI use than this test drove.
 
 ---
 

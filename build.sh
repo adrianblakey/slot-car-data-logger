@@ -79,6 +79,13 @@ fi
 
 # ── Prepare output and staging directories ────────────────────────────────────
 mkdir -p output
+# Same non-root-container issue as the manifest below: mattrmansfieldtx/
+# micropython-builder runs as uid 1001 ("app"), which mkdir's default mode
+# (0755, owner-writable only) won't let write build artifacts into this
+# bind-mounted dir. Confirmed with a real Docker build: without this, the
+# build itself succeeds but the final `cp firmware.* /app/output/` step
+# fails with "Permission denied".
+chmod a+rwx output
 STAGING_DIR="$(mktemp -d /tmp/mpy-build-XXXXXX)"
 trap "rm -rf $STAGING_DIR" EXIT
 
@@ -94,6 +101,14 @@ if [ "$COMPILE_MODE" = "frozen" ]; then
     # The container mounts the repo at /app. Replace $(APP_DIR) accordingly.
     RESOLVED_MANIFEST="$STAGING_DIR/manifest.py"
     sed 's|\$(APP_DIR)|/app/pico|g' manifest.py > "$RESOLVED_MANIFEST"
+    # mktemp -d makes $STAGING_DIR mode 0700 (owner-only) — fine for a plain
+    # host process, but mattrmansfieldtx/micropython-builder runs as a
+    # non-root user (uid 1001, "app"), which can't traverse or read an
+    # 0700 dir it doesn't own. Confirmed with a real Docker build: without
+    # this, the frozen build fails with "Permission denied" reading the
+    # staged manifest — never caught before since Docker wasn't available
+    # to exercise this path until now.
+    chmod -R a+rX "$STAGING_DIR"
     print_info "Manifest resolved (APP_DIR=/app/pico)"
 
     print_info "Starting frozen build..."

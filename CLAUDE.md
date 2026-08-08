@@ -79,11 +79,14 @@ code (see `_core1_exception_handler`'s docstring in `main.py`).
 **BLE is a fallback at boot, not a peer of Wi-Fi.** `main.py`'s `_main()`
 only starts the BLE task if Wi-Fi is unconfigured or failed to connect —
 running Wi-Fi web server + BLE GATT + the ADC pipeline simultaneously was
-confirmed on real hardware to sit right at this board's memory ceiling.
-Don't change this boot-time policy to "start both whenever both are
-configured" without re-verifying against that constraint (a frozen
-`./build.sh` build might have enough headroom to lift it, but that hasn't
-been measured — see README).
+confirmed on real hardware to sit right at this board's memory ceiling
+under an *unfrozen* deploy. Don't change this boot-time policy to "start
+both whenever both are configured" without re-verifying against that
+constraint on the specific build mode in use: a frozen `./build.sh` build
+now measurably has ~40 KB more free RAM at boot (131968 vs ~91808 bytes,
+confirmed on hardware — see README "What's verified on hardware"), and
+the *dynamic* BLE-triggered path below held up fine under it, but the
+boot-time decision itself hasn't been re-tested with a frozen build.
 
 That policy has one deliberate, narrower exception: once BLE is running,
 its control characteristic accepts a "start Wi-Fi" command
@@ -91,11 +94,13 @@ its control characteristic accepts a "start Wi-Fi" command
 keep BLE alive alongside the resulting Wi-Fi connection, gated by a
 `gc.mem_free()` check against `CONFIG.WIFI_MIN_FREE_BYTES` rather than
 the hardware measurement the boot-time rule is based on. Confirmed
-working end-to-end on real hardware (a `bleak` central connected, started
-Wi-Fi over BLE, stayed connected through a real AP connect and the
-subsequent BLE-triggered stop) — but that threshold's margin under
-*sustained* dual operation, not just this one short round trip, is still
-unmeasured (see README "What's still unverified"). Don't conflate the
+working end-to-end on real hardware, including a 90 s sustained run under
+a frozen build with Wi-Fi+BLE+web-server+ADC all live via a `bleak`
+central (zero disconnects; one non-fatal, self-recovering notify warning
+right after the Wi-Fi-stop command, not chased down further) — but that's
+still short next to a real multi-minute logging session, so the
+threshold's margin over a longer window remains a judgement call, not a
+measured limit (see README "What's still unverified"). Don't conflate the
 two policies: the boot-time path still never runs both together.
 
 **Storage format:** each sample is an 8-byte packed binary record
