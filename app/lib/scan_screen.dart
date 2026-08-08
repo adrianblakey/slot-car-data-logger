@@ -1,6 +1,8 @@
 // Copyright @ 2026 Adrian Blakey. All rights reserved
 // scan_screen.dart — find and connect to a SCLogger-* device.
 
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -30,12 +32,17 @@ class _ScanScreenState extends State<ScanScreen> {
   Future<void> _requestPermissionsAndScan() async {
     // Android 12+ needs runtime BLUETOOTH_SCAN/CONNECT; older Android needs
     // location. iOS's Info.plist usage string covers it there with no
-    // runtime prompt through permission_handler.
-    await [
-      Permission.bluetoothScan,
-      Permission.bluetoothConnect,
-      Permission.locationWhenInUse,
-    ].request();
+    // runtime prompt through permission_handler. permission_handler has no
+    // Linux implementation at all — calling .request() there throws
+    // MissingPluginException (confirmed running this on a Linux desktop
+    // build against a real Pico), so it's Android-only here.
+    if (Platform.isAndroid) {
+      await [
+        Permission.bluetoothScan,
+        Permission.bluetoothConnect,
+        Permission.locationWhenInUse,
+      ].request();
+    }
     _startScan();
   }
 

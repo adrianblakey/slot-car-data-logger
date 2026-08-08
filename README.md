@@ -797,6 +797,32 @@ Linux, at least) can produce an iOS build. That needs a real Mac or a
 cloud CI service that provisions Apple hardware (Codemagic and GitHub
 Actions' `macos-latest` runners both work for Flutter).
 
+### Linux desktop (dev-only BLE testing target)
+
+`app/linux/` (added via `flutter create --platforms=linux .`) lets
+`flutter run -d linux` launch the app on this machine directly, using its
+own Bluetooth adapter — useful for exercising the BLE code against a real
+Pico without a phone. It's a bonus dev target, not a shipped platform:
+the app's actual scope is iOS/Android per the "What's verified" section
+below still applies to those.
+
+Two real, hardware-confirmed things fell out of testing this way, both
+specific to the Linux backend (not known to affect Android/iOS, which
+have their own separate `flutter_blue_plus` and `permission_handler`
+implementations):
+
+- `permission_handler` has no Linux implementation at all —
+  `.request()` throws `MissingPluginException` there. `scan_screen.dart`
+  now only calls it when `Platform.isAndroid`, which changes nothing on
+  Android/iOS (iOS never called it — its permission is Info.plist-only)
+  and fixes the Linux crash.
+- `AdvertisementData.advName` comes back empty for every device on the
+  Linux backend, even ones BlueZ has a name for (confirmed via
+  `bluetoothctl`). `BluetoothDevice.platformName` has the real name
+  there instead — `scan_screen.dart` already fell back to it
+  (`advName.isNotEmpty ? advName : platformName`), so no fix was needed,
+  but it's why that fallback exists.
+
 Key files:
 
 - `lib/ble_protocol.dart` — UUIDs, command bytes, and payload
@@ -826,14 +852,35 @@ worth knowing about if this is rebuilt elsewhere:
   needs 3.12.2's specific features, so the constraint was relaxed rather
   than chasing a matching container image.
 
+**The BLE logic itself has been run end-to-end against a real Pico**, via
+the Linux desktop target above rather than a phone. A `flutter run -d
+linux` build performed a real scan, connect, characteristic resolution,
+and reads of every characteristic against actual hardware — not mocked:
+
+```
+Device info: Manufacturer=Adrian's And Richard's Technologies (AART),
+             Serial=e6614c311b8f4736,
+             Firmware=3.4.0; MicroPython v1.28.0, Software=Slot Car Logger (Pico W); v1
+Status:      recording=false, flashFreePct=41%, recordCount=0, wifiUp=false
+Profile:     track=Daytona, race=race, lane=4, controller=Adrian, car=unknown
+Files:       log_20210101_000003.log (177608 bytes)
+```
+
+This confirms `ble_protocol.dart`'s (de)serialization and
+`ble_service.dart`'s scan/connect/read/file-list sequencing are all
+correct against the real device — the same Dart code Android and iOS
+builds call into.
+
 **What's not verified**: no physical iPhone or Android phone was available
 in the development environment (only the Pico W itself, over USB serial),
-and iOS builds are categorically impossible without a Mac/Xcode. The app
-has not been installed or exercised against a real BLE connection — only
-the protocol logic and the fact that it compiles into a real APK, mirroring
-`ble_cli.py`'s already hardware-verified implementation line for line.
-Treat it as implemented-and-builds-but-runtime-untested until someone
-installs it on an actual phone.
+and iOS builds are categorically impossible without a Mac/Xcode. What the
+Linux run above does *not* cover: the Android/iOS-specific
+`flutter_blue_plus` backends (separate native implementations from the
+Linux one just exercised), the runtime permission-prompt flow
+(`permission_handler` on Android, Info.plist on iOS), and actually using
+the UI by touch on a phone screen. Treat those specifically as
+implemented-and-builds-but-runtime-untested until someone installs it on
+an actual phone.
 
 ---
 
