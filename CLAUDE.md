@@ -103,6 +103,24 @@ threshold's margin over a longer window remains a judgement call, not a
 measured limit (see README "What's still unverified"). Don't conflate the
 two policies: the boot-time path still never runs both together.
 
+**BLE has real, hardware-confirmed ceilings below what the BLE spec
+alone would suggest.** All found the hard way building `ble_server.py`'s
+Files service (see README's "found and fixed on hardware" #11-15 for the
+full story each), and worth checking before adding more BLE surface:
+advertising payload maxes out around 2 custom 128-bit service UUIDs, not
+whatever the 31-byte spec limit implies once the device name is added;
+this specific MicroPython BLE build silently drops characteristics past
+some total-GATT-attribute-count ceiling (a 3rd characteristic on Files
+just didn't register — no error, `register_services()` "succeeded");
+GATT attribute values are capped at 512 bytes per the BLE spec itself,
+which anything JSON-based hits fast; real BLE centrals cannot be assumed
+to negotiate a usable MTU even after the device explicitly asks (writes
+over ~20 bytes are the risky zone, and fail by silently truncating, not
+erroring); and reading a characteristic back-to-back with no delay after
+triggering a device-side update can produce a torn read of the buffer,
+not just a stale one — pace producer/consumer characteristic pairs by at
+least 100ms.
+
 **Storage format:** each sample is an 8-byte packed binary record
 (`struct '<Hhhh'`: dt_ms, current centi-amps, track/supply centivolts) in
 `pico/src/log_record.py`, not CSV — flash space is scarce with no SD card.

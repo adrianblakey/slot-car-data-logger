@@ -297,13 +297,17 @@ async def _buttons_task() -> None:
 def _do_erase() -> None:
     """Only takes effect if not currently recording — silently deleting a
     driver's in-progress session out from under them is worse than making
-    them stop first."""
+    them stop first. Clears both session data and syslog files (the
+    currently-open log is left alone — see logconfig.erase_logs) — download
+    anything worth keeping first (see the BLE Files service) since this
+    doesn't ask twice."""
     if _recording[0]:
         log.warning("Erase refused: capture still running")
         _beeper.command_rejected()
         return
-    n = fw.erase_all()
-    log.info("Erased %d session file(s) (BLE command)", n)
+    n_data = fw.erase_all()
+    n_logs = logconfig.erase_logs()
+    log.info("Erased %d session file(s), %d log file(s) (BLE command)", n_data, n_logs)
     _beeper.erase_done()
 
 

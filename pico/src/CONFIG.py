@@ -47,3 +47,13 @@ FLASH_AUTO_ROTATE    = False
 # which treats BLE as a strict fallback — see main.py). Tune this after
 # testing the BLE-start path on real hardware.
 WIFI_MIN_FREE_BYTES  = 40 * 1024
+
+# ── BLE file transfer ────────────────────────────────────────────────────
+# Bytes returned per FILE_CHUNK read (see ble_server.py's Files service). A
+# judgement call, not a measured safe maximum: BLE's ATT_MTU is negotiated
+# per connection, and a value must stay under (negotiated MTU - 3 bytes ATT
+# header) or a read silently truncates. 180 stays safely under the ~247-byte
+# MTU most modern centrals (phones, bleak) negotiate by default, with margin
+# for less capable ones — but hasn't been stress-tested against a central
+# that never negotiates past the BLE-spec default of 23.
+BLE_FILE_CHUNK_SIZE  = 180

@@ -155,6 +155,33 @@ class _TimestampStreamHandler(logging.StreamHandler):
             print("logconfig: stream error", e)
 
 
+LOG_DIR = "/syslog"
+_LOG_EXT = ".log"
+
+
+def list_logs(log_dir=LOG_DIR):
+    """Sorted list of syslog filenames — mirrors flash_writer.list_sessions()."""
+    try:
+        return sorted(f for f in os.listdir(log_dir) if f.endswith(_LOG_EXT))
+    except OSError:
+        return []
+
+
+def erase_logs(log_dir=LOG_DIR):
+    """Delete every syslog file EXCEPT the one currently open for writing
+    (_log_file_path) — closing it just to erase, or deleting out from
+    under an open file handle, loses the in-progress log for no benefit.
+    Returns the count removed. Mirrors flash_writer.erase_all()."""
+    n = 0
+    for f in list_logs(log_dir):
+        path = log_dir + "/" + f
+        if path == _log_file_path:
+            continue
+        os.remove(path)
+        n += 1
+    return n
+
+
 def _make_log_path():
     """Return a unique timestamped log file path under /syslog/."""
     try:

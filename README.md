@@ -282,6 +282,16 @@ home Wi-Fi network:
   subsequent BLE-triggered Wi-Fi stop — confirming the deliberate
   BLE+Wi-Fi-coexistence exception (see "BLE-triggered Wi-Fi" above)
   actually works, not just that it doesn't crash.
+- **BLE file transfer**, from the same real central: fetched the file
+  listing (data files first, then logs, both sorted), created a session
+  over BLE and confirmed the new file appeared in a re-fetched listing,
+  downloaded a 65 KB actively-growing log file and confirmed it matched a
+  known-good copy byte-for-byte, downloaded a session data file and
+  confirmed its size matched the listing exactly, confirmed an
+  out-of-range index returns an empty download rather than garbage or a
+  crash, and confirmed erase clears every data and log file except the
+  one currently being written to. Five real bugs found and fixed getting
+  here — see the numbered list below (11-15).
 - `fatal_handler.py`'s crash pipeline: caught and persisted a real
   `MemoryError` (see below) to `/syslog/crashes/` exactly as designed.
 - **Beeper, audibly**: with the fixes below, all 12 named patterns
@@ -322,8 +332,8 @@ home Wi-Fi network:
   the boot-time policy itself — that policy is unchanged and still untested
   under a frozen build (see "What's still unverified").
 
-**Found and fixed on hardware** (ten issues; the first three share a root
-cause — this board has 264 KB of RAM and no headroom to spare):
+**Found and fixed on hardware** (fifteen issues; the first three share a
+root cause — this board has 264 KB of RAM and no headroom to spare):
 
 1. Importing `ble_server` then `webserver` back-to-back with no
    `gc.collect()` raised `MemoryError` — `microdot.py` is one large
@@ -411,6 +421,54 @@ cause — this board has 264 KB of RAM and no headroom to spare):
     let the container's non-root user write `firmware.uf2` etc. into the
     bind-mounted host directory. Fixed with `chmod a+rwx output` right
     after creating it.
+11. **BLE task crashed at boot the moment the Files service was added:
+    `ValueError: Advertising payload too long`** — BLE's legacy
+    advertising payload is capped at 31 bytes total, and each 128-bit
+    custom service UUID costs 16 of them; the existing Logger service's
+    UUID plus a second one for Files already blew the budget once the
+    device name and other fields were added. Fixed by not advertising
+    Files at all — a connected central still finds it via normal GATT
+    service discovery regardless of what's in the advertisement, so
+    nothing was actually lost.
+12. **A 3rd characteristic on the Files service silently failed to
+    register** — real GATT discovery from a `bleak` central showed only 2
+    of the 3 characteristics originally defined (Logger's 3 registered
+    fine), pointing at a total-GATT-attribute-count ceiling on this
+    MicroPython BLE build rather than a per-service limit. Fixed by
+    redesigning down to 2 characteristics — folding "advance" and "select
+    a file" into the same write characteristic, distinguished by payload
+    shape (see "BLE file transfer" above) — rather than chasing the
+    actual ceiling number.
+13. **A 7-file JSON listing truncated mid-value and failed to parse** —
+    a single GATT attribute value is capped at 512 bytes by the BLE spec
+    itself; a flat listing character grows past that once there are more
+    than a handful of files. Fixed by routing the listing through the
+    same chunked transfer path as a real file download instead of its own
+    cached characteristic (see #12's redesign — same fix covered both).
+14. **Selecting a file by name silently failed — a real central defaulted
+    to the BLE-spec MTU minimum (23, a 20-byte write payload) and stayed
+    there even after the device explicitly requested a larger one on
+    connect** (`connection.exchange_mtu(247)` sent without error; a real
+    `bleak`/BlueZ central just didn't honour it). Real filenames
+    (`session_*.bin` is 27 characters, `log_*.log` is 23) don't reliably
+    fit in 20 bytes, and MicroPython's bluetooth stack doesn't implement
+    the GATT "queued write" fallback BLE defines for oversized single
+    writes — the write silently landed truncated
+    (`"log_20210101_000003."`, missing `.log`) instead of raising an
+    error. Fixed by redesigning selection to be by index into the most
+    recently fetched listing (3 bytes, fits any MTU) rather than by name,
+    instead of chasing MTU negotiation further.
+15. **File downloads intermittently corrupted — not dropped or duplicate
+    chunks, but content from a *different, later* point in the file
+    spliced into the middle of an earlier one** — reading `FILE_CHUNK`
+    immediately after writing the "advance" command, with no delay,
+    raced the device's own buffer update (a torn read of `_file_chunk`'s
+    value, serving a read partway through `_prepare_chunk()` overwriting
+    it). Reproducible at ~20ms between write and read on a 65 KB file;
+    confirmed clean at ~150ms on the same file and device state. Fixed by
+    documenting a 100ms minimum pacing requirement between "advance" and
+    the next read, rather than patching aioble/MicroPython's BLE stack
+    internals directly.
 
 **Operational lesson for future debugging on this board**: interrupting a
 running Wi-Fi/BLE session with Ctrl-C (`mpremote ... resume exec`) rather
@@ -559,9 +617,12 @@ duplicates, so it's safe to run again.
   an optional `/ws` feed of plain numeric readings — no live graph.
 - **BLE**: a Device Information service (with the current IP address folded
   into the firmware-revision characteristic, so a phone paired over BLE but
-  not on the same Wi-Fi can still find the web UI) and a custom Logger
-  service with status (notify), control (write, one byte per command — see
-  table below), and profile (read/write/notify) characteristics.
+  not on the same Wi-Fi can still find the web UI), a custom Logger service
+  with status (notify), control (write, one byte per command — see table
+  below), and profile (read/write/notify) characteristics, and a Files
+  service to list and download session data and syslog files (see "BLE
+  file transfer" below) — a BLE-only equivalent of the web UI's session
+  list/download/erase, for when there's no Wi-Fi to reach that with.
 
 BLE is a **fallback at boot**, not started alongside a Wi-Fi connection
 that's already up: it only starts if Wi-Fi isn't configured or fails to
@@ -581,7 +642,7 @@ characteristic (`CMD_LANE_SET` takes a second payload byte):
 | 0 | Stop capture | |
 | 1 | Start capture | new session file |
 | 2 | Lap marker | only while capturing |
-| 3 | Erase all sessions | refused (`command_rejected` beep) if still capturing |
+| 3 | Erase all sessions and logs | refused (`command_rejected` beep) if still capturing; download anything worth keeping first (see "BLE file transfer") — this doesn't ask twice |
 | 4 | Start Wi-Fi | see "BLE-triggered Wi-Fi" below |
 | 5 | Stop Wi-Fi | tears down the web server, back to BLE-only |
 | 6 | Rotate lane | advances to the next lane colour, wraps after the last one |
@@ -606,6 +667,47 @@ against `CONFIG.WIFI_MIN_FREE_BYTES` and refuses (beeping
 `command_rejected`) rather than risking a `MemoryError` if it's not met.
 That threshold is a judgement call, not a hardware measurement — see
 "What's still unverified".
+
+### BLE file transfer
+
+A BLE-only Files service (separate from the Logger service above) lists
+and downloads session data (`.bin`) and syslog (`.log`) files — the way
+to get data off the device with no Wi-Fi to reach the web UI's own
+session list/download. Two characteristics, both arrived at the hard way
+on real hardware (see the "found and fixed" log below for the full
+story of each):
+
+- **Selection is by index into the listing, not filename.** Real
+  filenames (`session_YYYYMMDD_HHMMSS.bin` is 27 characters,
+  `log_YYYYMMDD_HHMMSS.log` is 23) don't reliably fit in a single BLE
+  write — the guaranteed-minimum ATT MTU is 23 bytes (20 usable payload
+  bytes), and a real central stayed there even after the device asked for
+  a bigger one. A 3-byte index-based select sidesteps needing MTU
+  negotiation to work at all.
+- **The listing itself streams through the same chunked path as a real
+  file**, rather than its own cached characteristic — a flat JSON listing
+  blows past the BLE spec's 512-byte single-attribute-value cap once
+  there are more than a handful of files, which any device that's been
+  in use for a while will have.
+
+Wire protocol, writing to `FILE_SELECT` and reading `FILE_CHUNK` (empty
+chunk = done):
+
+1. Write `0x01` to `FILE_SELECT` (fetch the listing).
+2. Read `FILE_CHUNK`. **Wait at least 100ms**, write `0x00` to
+   `FILE_SELECT` (advance), repeat until a chunk comes back empty —
+   confirmed on hardware that reading back-to-back with no delay
+   intermittently corrupts the data (a torn read racing the device's
+   buffer update, not a dropped chunk — see the log below). What you've
+   reassembled is JSON: `[{"name", "kind": "data"|"log", "size"}, ...]`,
+   in a fixed order (data files first, then log files, each sorted).
+3. To download one, write `0x02` + its position in that list as a
+   little-endian `u16` (3 bytes total) to `FILE_SELECT`, then repeat step
+   2's read/wait/advance loop to pull its contents.
+
+Erasing (control command 3) clears every session and log file except the
+one currently being written to — download first if you want to keep
+anything, since erase doesn't ask twice.
 
 ---
 
