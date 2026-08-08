@@ -104,6 +104,7 @@ slot-car-data-logger/
 ├── Dockerfile, build.sh, manifest.py   # Docker UF2 build (frozen or mpy mode)
 ├── Makefile, dist_manifest.py, make_dist.py   # mpremote deploy helpers
 ├── tools/decode_log.py                 # host: binary session -> CSV/pandas
+├── tools/graph_session_csv.bas         # LibreOffice Calc macro: graph a decoded session
 └── pico/
     ├── boot.py             # pre-main: ErrorBuffer, LED, reset_cause
     ├── main.py              # entry point — boot stages + all asyncio tasks
@@ -369,6 +370,61 @@ python3 tools/decode_log.py session_20260101_120000.bin --pandas
 
 Or fetch it straight from the device over the web UI — every session in the
 list has a `csv` download link that runs the same conversion on-device.
+
+---
+
+## Visualizing a session (LibreOffice)
+
+`tools/graph_session_csv.bas` graphs a decoded session CSV inside LibreOffice
+Calc — no separate plotting tool needed. Three steps: reduce the binary log
+to CSV, install the macro once, then run it against any session.
+
+### 1. Reduce the data
+
+Same conversion as above — pull the session off the device (or copy it from
+`/data` some other way) and decode it to CSV on a host machine:
+
+```bash
+python3 tools/decode_log.py session_20260101_120000.bin -o session.csv
+```
+
+### 2. Install the macro
+
+One-time setup, in LibreOffice Calc:
+
+1. `Tools > Macros > Edit Macros...` to open the Basic IDE.
+2. In the object tree on the left, under **My Macros > Standard**, right-click
+   and insert a new module (or reuse an empty default one).
+3. Open `tools/graph_session_csv.bas` in a text editor, copy the whole file,
+   and paste it into the new module, replacing any placeholder content.
+4. Save. Installing it under **My Macros** (rather than inside the document)
+   makes it available to any spreadsheet you open afterwards, not just the
+   one open at the time.
+
+### 3. Display the graphs
+
+1. Open the decoded `session.csv` in LibreOffice Calc.
+2. `Tools > Macros > Run Macro...`, find `GraphSessionCSV` under
+   **My Macros > Standard**, and run it (or press F5 from inside the Basic
+   IDE with that Sub selected).
+
+This builds a chart named `SessionChart` next to the data:
+
+- **X axis**: `t_ms`.
+- **Left axis** ("track current"): `current_A`, in yellow. Range is dynamic —
+  floored/ceiled to the nearest whole amp from the session's actual min/max,
+  not a fixed scale, so a mild session isn't flattened and a hard one isn't
+  clipped.
+- **Right axis** ("supply and track voltages"): `track_V` (red) and
+  `supply_V` (blue), 0 up to the session's real peak volt, rounded up to the
+  next whole volt.
+- **Lap markers**: each Button-B press (the CSV's `marker` column) draws as
+  a black vertical line spanning the current axis, labelled "lap marker" in
+  the legend.
+
+Re-running `GraphSessionCSV` — e.g. after re-decoding an updated session over
+the same CSV — replaces the existing `SessionChart` rather than piling up
+duplicates, so it's safe to run again.
 
 ---
 
