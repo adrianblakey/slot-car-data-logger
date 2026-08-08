@@ -115,6 +115,7 @@ slot-car-data-logger/
 ├── Makefile, dist_manifest.py, make_dist.py   # mpremote deploy helpers
 ├── tools/decode_log.py                 # host: binary session -> CSV/pandas
 ├── tools/graph_session_csv.bas         # LibreOffice Calc macro: graph a decoded session
+├── tools/ble_cli.py                    # host: command-line client for every BLE function
 └── pico/
     ├── boot.py             # pre-main: ErrorBuffer, LED, reset_cause
     ├── main.py              # entry point — boot stages + all asyncio tasks
@@ -292,6 +293,21 @@ home Wi-Fi network:
   crash, and confirmed erase clears every data and log file except the
   one currently being written to. Five real bugs found and fixed getting
   here — see the numbered list below (11-15).
+- **`tools/ble_cli.py`**, every command, against the real device: `info`,
+  `status` (both a single read and `--watch`'s live notify stream),
+  `profile` read and `--set`, `start`/`mark`/`stop` (status correctly
+  reflected each), `lane-rotate`/`lane-set`/`race-toggle` (profile
+  correctly reflected each — not status, which doesn't carry lane/race),
+  `wifi-start` (polled correctly through the several-second real connect)
+  and `wifi-stop`, `list-files`, and `download` — the downloaded file
+  decoded cleanly with `tools/decode_log.py` and showed the exact
+  `race`/`lane` values set moments earlier via the same CLI run. Two bugs
+  found and fixed in the tool itself: a double-connect (manually calling
+  `client.connect()` then also entering it as an `async with` context,
+  which does the same thing again) that made every command fail
+  immediately, and `lane-rotate`/`race-toggle` printing `status` instead
+  of `profile` afterward — showing nothing useful, since lane/race aren't
+  in the status characteristic at all.
 - `fatal_handler.py`'s crash pipeline: caught and persisted a real
   `MemoryError` (see below) to `/syslog/crashes/` exactly as designed.
 - **Beeper, audibly**: with the fixes below, all 12 named patterns
@@ -708,6 +724,31 @@ chunk = done):
 Erasing (control command 3) clears every session and log file except the
 one currently being written to — download first if you want to keep
 anything, since erase doesn't ask twice.
+
+### BLE command-line client
+
+`tools/ble_cli.py` is a ready-to-use command-line client for everything
+above — status, capture/erase/Wi-Fi/lane/race control, profile
+read/write, and file listing/download — so a phone app isn't the only
+way to drive the device over BLE:
+
+```bash
+pip install bleak
+python3 tools/ble_cli.py scan                    # find nearby devices
+python3 tools/ble_cli.py status                  # or --watch for live updates
+python3 tools/ble_cli.py start                   # stop / mark / erase
+python3 tools/ble_cli.py wifi-start               # polls up to 15s for the connect
+python3 tools/ble_cli.py lane-rotate              # or lane-set 5 / race-toggle
+python3 tools/ble_cli.py profile                  # or --set track=Daytona --set lane=3
+python3 tools/ble_cli.py list-files
+python3 tools/ble_cli.py download session_20260101_120000.bin
+```
+
+Every command re-scans by default (`--timeout` to adjust); pass
+`--address` (from `scan`'s output) to connect directly once you know it,
+skipping the scan. Implements the exact wire protocol above — UUIDs and
+command bytes are copied from `ble_server.py`, not imported (host tool,
+device code — keep the two in sync by hand if either changes).
 
 ---
 
