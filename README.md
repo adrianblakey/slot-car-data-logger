@@ -750,6 +750,58 @@ skipping the scan. Implements the exact wire protocol above — UUIDs and
 command bytes are copied from `ble_server.py`, not imported (host tool,
 device code — keep the two in sync by hand if either changes).
 
+### Flutter mobile app
+
+`app/` is a Flutter client for iOS and Android implementing the same BLE
+protocol as `ble_cli.py` above: scan for `SCLogger-*` devices, connect,
+live status, start/stop/mark/erase, Wi-Fi start/stop, lane rotate/set,
+race toggle, profile view/edit, and file list/download (downloaded files
+are handed to the OS share sheet, since phones have no meaningful
+"current directory" for the user to find them in). Uses
+[`flutter_blue_plus`](https://pub.dev/packages/flutter_blue_plus) for BLE;
+its `connect()` call requires declaring a use-case license, and this app
+uses `License.nonprofit` (`app/lib/ble_service.dart`) — correct for a
+personal/hobby project, but worth knowing about if this code is ever
+reused for something commercial.
+
+```bash
+cd app
+flutter pub get
+flutter run              # needs a connected/emulated phone
+```
+
+Key files:
+
+- `lib/ble_protocol.dart` — UUIDs, command bytes, and payload
+  (de)serialization. Hand-copied from `pico/src/ble_server.py` (same
+  relationship as `ble_cli.py` above — not imported, kept in sync by hand).
+- `lib/ble_service.dart` — the `flutter_blue_plus` wrapper (scan, connect,
+  status/profile/control, chunked file transfer with the same 150ms
+  pacing `ble_cli.py` uses).
+- `lib/scan_screen.dart`, `lib/dashboard_screen.dart`, `lib/files_screen.dart`
+  — the three screens.
+
+**What's verified**: `flutter analyze` and `flutter test` both pass clean,
+and `flutter build apk --debug` succeeds (a real, installable
+`app-debug.apk` is produced). Getting the Android build working on this
+machine's shared, root-owned SDK install needed some one-time environment
+fixes worth knowing about if this is rebuilt elsewhere: `compileSdk` here
+tracks Flutter's default rather than the `permission_handler_android`
+plugin's, because that plugin's 14.0.0 release hardcodes `compileSdk 37`
+and only a `37.0`-suffixed preview build of that platform exists in the
+SDK repo (no bare `android-37` yet) — see `pubspec.yaml`'s
+`dependency_overrides` pinning `permission_handler_android` back to
+12.0.13 (`compileSdk 34`) instead.
+
+**What's not verified**: no physical iPhone or Android phone was available
+in the development environment (only the Pico W itself, over USB serial),
+and iOS builds are categorically impossible without a Mac/Xcode. The app
+has not been installed or exercised against a real BLE connection — only
+the protocol logic and the fact that it compiles into a real APK, mirroring
+`ble_cli.py`'s already hardware-verified implementation line for line.
+Treat it as implemented-and-builds-but-runtime-untested until someone
+installs it on an actual phone.
+
 ---
 
 ## References

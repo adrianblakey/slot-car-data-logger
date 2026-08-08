@@ -22,6 +22,8 @@ eggs/
 lib/
 !pico/lib/
 !pico/lib/**
+!app/lib/
+!app/lib/**
 lib64/
 parts/
 sdist/
