@@ -50,12 +50,21 @@ _LOGGER_PROFILE_UUID = bluetooth.UUID('B1190EFD-176F-4B32-A715-89B3425A4076')  #
 
 _ADV_APPEARANCE_LOGGER = 128   # org.bluetooth.characteristic.gap.appearance "Generic Computer"
 
-# Control command bytes written by a central.
-CMD_STOP  = 0
-CMD_START = 1
-CMD_MARK  = 2
+# Control command bytes written by a central. Most are a single byte;
+# CMD_LANE_SET takes a second payload byte (1-based lane number). See
+# main.py's _ble_control_fn for the dispatch and README's "Abbreviated UI"
+# for the full command table.
+CMD_STOP        = 0
+CMD_START       = 1
+CMD_MARK        = 2
+CMD_ERASE       = 3   # only takes effect if not currently recording
+CMD_WIFI_START  = 4   # gated by a free-heap check — see CONFIG.WIFI_MIN_FREE_BYTES
+CMD_WIFI_STOP   = 5
+CMD_LANE_ROTATE = 6
+CMD_LANE_SET    = 7   # byte 1: lane number, 1-8
+CMD_RACE_TOGGLE = 8   # flips practice <-> race
 
-_STATUS_FMT = '<BBH'   # recording(0/1), flash_free_pct(0-100), record_count(u16, wraps)
+_STATUS_FMT = '<BBHB'  # recording(0/1), flash_free_pct(0-100), record_count(u16, wraps), wifi_up(0/1)
 
 
 def _device_id() -> str:
@@ -150,7 +159,8 @@ class BLEServer:
                         _STATUS_FMT,
                         1 if st.get('recording') else 0,
                         max(0, min(100, st.get('flash_free_pct', 0))),
-                        st.get('record_count', 0) & 0xFFFF)
+                        st.get('record_count', 0) & 0xFFFF,
+                        1 if st.get('wifi_up') else 0)
                     self._status.write(packed)
                     self._status.notify(self._connection)
                 except Exception as e:
@@ -168,11 +178,29 @@ class BLEServer:
             _log().info("BLE control received: %d", cmd)
             if self._control_fn is not None:
                 try:
-                    self._control_fn(cmd)
+                    # Pass the whole payload, not just data[0]: CMD_LANE_SET
+                    # needs a second byte (the lane number) that a bare cmd
+                    # int would drop.
+                    self._control_fn(cmd, data)
                 except Exception as e:
                     _log().warning("BLE control handler failed: %s", e)
 
     # ── profile read/write ──────────────────────────────────────────────────
+
+    def refresh_profile(self) -> None:
+        """Push the current PROFILE out to the profile characteristic and
+        notify. Needed because main.py's lane/race control commands
+        (CMD_LANE_ROTATE/CMD_LANE_SET/CMD_RACE_TOGGLE) mutate PROFILE
+        directly rather than by writing JSON to this characteristic, so
+        _profile_task below never sees them — without this, a central
+        reading the profile characteristic after one of those commands
+        would see stale data."""
+        try:
+            self._profile.write(PROFILE.as_json().encode())
+            if self._connection is not None:
+                self._profile.notify(self._connection)
+        except Exception as e:
+            _log().warning("BLE profile refresh failed: %s", e)
 
     async def _profile_task(self):
         import json

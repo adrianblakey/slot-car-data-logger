@@ -106,3 +106,7 @@ class Beeper:
                                           (None, 80), ("C4", 200)])
     def reset_tick(self):     self.play([("A5", 30)])
     def reset_confirmed(self): self.play([("C6", 100), ("G5", 100), ("C5", 200)])
+    def wifi_stopped(self):   self.play([("E6", 80), ("C6", 120)])
+    def profile_changed(self): self.play([("F5", 60), ("A5", 60)])
+    def erase_done(self):     self.play([("D5", 100), ("D5", 100)])
+    def command_rejected(self): self.play([("A4", 200)])

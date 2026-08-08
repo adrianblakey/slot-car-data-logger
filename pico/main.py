@@ -52,17 +52,20 @@ import flash_writer as fw
 from flash_writer import FlashWriter
 
 try:
-    from CONFIG import MODE, SAMPLE_RATE_HZ, CRASH_AUTO_REBOOT_MS
+    from CONFIG import MODE, SAMPLE_RATE_HZ, CRASH_AUTO_REBOOT_MS, WIFI_MIN_FREE_BYTES
 except Exception:
     MODE = "debug"
     SAMPLE_RATE_HZ = 200
     CRASH_AUTO_REBOOT_MS = 120_000
+    WIFI_MIN_FREE_BYTES = 40 * 1024
 
 try:
     from BOOT import START_WIFI, START_BLE
 except Exception:
     START_WIFI = False
     START_BLE = False
+
+from session_profile import PROFILE, LANE_COLORS, lane_color
 
 log = None   # assigned in _setup_logging()
 
@@ -90,8 +93,14 @@ _recording       = [False]   # Button A / BLE / web toggle
 _marker_pending  = [False]   # Button B / BLE / web one-shot
 _beeper: Beeper = None       # constructed in _start_core0_singletons()
 _writer: FlashWriter = None  # constructed in _start_core0_singletons()
-_wifi = None                 # WiFiConnection, set if START_WIFI
+_wifi = None                 # WiFiConnection, set if START_WIFI or BLE-started
 _ble  = None                 # BLEServer, set if START_BLE
+
+# Handles for the two tasks _wifi_task() spawns on a successful connect —
+# kept so a later BLE "stop Wi-Fi" command can cancel them. See
+# _do_wifi_stop_async().
+_webserver_task_handle = None
+_wifi_monitor_task_handle = None
 
 from asyncio import ThreadSafeFlag as _TSF
 _core1_fault_ts: _TSF = _TSF()
@@ -285,14 +294,107 @@ async def _buttons_task() -> None:
         raise
 
 
-def _ble_control_fn(cmd: int) -> None:
-    from ble_server import CMD_START, CMD_STOP, CMD_MARK
+def _do_erase() -> None:
+    """Only takes effect if not currently recording — silently deleting a
+    driver's in-progress session out from under them is worse than making
+    them stop first."""
+    if _recording[0]:
+        log.warning("Erase refused: capture still running")
+        _beeper.command_rejected()
+        return
+    n = fw.erase_all()
+    log.info("Erased %d session file(s) (BLE command)", n)
+    _beeper.erase_done()
+
+
+def _do_lane_rotate() -> None:
+    PROFILE.rotate_lane()
+    log.info("Lane rotated to %d (%s)", PROFILE.lane, lane_color(PROFILE.lane))
+    _beeper.profile_changed()
+    if _ble is not None:
+        _ble.refresh_profile()
+
+
+def _do_lane_set(lane: int) -> None:
+    if not (1 <= lane <= len(LANE_COLORS)):
+        log.warning("Lane set refused: %d out of range", lane)
+        _beeper.command_rejected()
+        return
+    PROFILE.update(lane=lane)
+    log.info("Lane set to %d (%s)", lane, lane_color(lane))
+    _beeper.profile_changed()
+    if _ble is not None:
+        _ble.refresh_profile()
+
+
+def _do_race_toggle() -> None:
+    PROFILE.toggle_race()
+    log.info("Race type set to %s", PROFILE.race)
+    _beeper.profile_changed()
+    if _ble is not None:
+        _ble.refresh_profile()
+
+
+async def _do_wifi_start_async() -> None:
+    """BLE-triggered Wi-Fi start. Deliberately keeps BLE running afterwards
+    (unlike the boot-time path in _main(), which treats BLE as a strict
+    fallback) — the free-heap check below is the safety net for that. See
+    CONFIG.WIFI_MIN_FREE_BYTES."""
+    if _wifi is not None and _wifi.connected():
+        log.info("Wi-Fi start requested but already connected")
+        return
+    gc.collect()
+    free = gc.mem_free()
+    if free < WIFI_MIN_FREE_BYTES:
+        log.warning("Wi-Fi start refused: %d bytes free, need %d", free, WIFI_MIN_FREE_BYTES)
+        _beeper.command_rejected()
+        return
+    await _wifi_task()
+
+
+async def _do_wifi_stop_async() -> None:
+    global _webserver_task_handle, _wifi_monitor_task_handle
+    if _wifi is None or not _wifi.connected():
+        log.info("Wi-Fi stop requested but not connected")
+        return
+    if _webserver_task_handle is not None:
+        _webserver_task_handle.cancel()
+        _webserver_task_handle = None
+    if _wifi_monitor_task_handle is not None:
+        _wifi_monitor_task_handle.cancel()
+        _wifi_monitor_task_handle = None
+    _wifi.disconnect()
+    _beeper.wifi_stopped()
+    log.info("Wi-Fi stopped (BLE command)")
+
+
+def _ble_control_fn(cmd: int, data: bytes = b'') -> None:
+    from ble_server import (CMD_START, CMD_STOP, CMD_MARK, CMD_ERASE,
+                             CMD_WIFI_START, CMD_WIFI_STOP,
+                             CMD_LANE_ROTATE, CMD_LANE_SET, CMD_RACE_TOGGLE)
     if cmd == CMD_START:
         _do_start()
     elif cmd == CMD_STOP:
         _do_stop()
     elif cmd == CMD_MARK:
         _do_mark()
+    elif cmd == CMD_ERASE:
+        _do_erase()
+    elif cmd == CMD_WIFI_START:
+        asyncio.create_task(_do_wifi_start_async())
+    elif cmd == CMD_WIFI_STOP:
+        asyncio.create_task(_do_wifi_stop_async())
+    elif cmd == CMD_LANE_ROTATE:
+        _do_lane_rotate()
+    elif cmd == CMD_LANE_SET:
+        if len(data) >= 2:
+            _do_lane_set(data[1])
+        else:
+            log.warning("Lane set command missing its payload byte")
+    elif cmd == CMD_RACE_TOGGLE:
+        _do_race_toggle()
+    else:
+        log.warning("Unknown BLE control command: %d", cmd)
 
 
 def _status_dict() -> dict:
@@ -300,6 +402,7 @@ def _status_dict() -> dict:
         'recording': _recording[0],
         'flash_free_pct': _flash_free_pct(),
         'record_count': _writer.record_count() if _writer else 0,
+        'wifi_up': _wifi.connected() if _wifi else False,
     }
 
 
@@ -395,11 +498,18 @@ async def _flash_quota_task() -> None:
 async def _wifi_task() -> bool:
     """
     Connect to Wi-Fi and, if successful, start the web server + link
-    monitor as independent background tasks. Returns True/False so
-    _main() can decide whether to also start BLE (see its comment for why
-    that's conditional, not "and" — confirmed on hardware).
+    monitor as independent background tasks. Returns True/False so callers
+    can decide what to do next — _main() decides whether to also start BLE
+    at boot (see its comment for why that's conditional, not "and" —
+    confirmed on hardware); _do_wifi_start_async() calls this directly for
+    a BLE-triggered start, after its own free-heap check.
+
+    The two spawned tasks' handles are stashed in module globals so a later
+    BLE "stop Wi-Fi" command can cancel them (_do_wifi_stop_async()) — this
+    function itself doesn't run again until the next start, so it can't
+    hold onto them locally.
     """
-    global _wifi
+    global _wifi, _webserver_task_handle, _wifi_monitor_task_handle
     from wifi_connection import WiFiConnection
     log.info("Wi-Fi task starting")
     _wifi = WiFiConnection()
@@ -407,8 +517,8 @@ async def _wifi_task() -> bool:
         if await _wifi.connect():
             _beeper.wifi_connected()
             log.info("Wi-Fi connected: %s", _wifi.ip())
-            asyncio.create_task(_webserver_task())
-            asyncio.create_task(_wifi.monitor(interval_s=10))
+            _webserver_task_handle = asyncio.create_task(_webserver_task())
+            _wifi_monitor_task_handle = asyncio.create_task(_wifi.monitor(interval_s=10))
             return True
         _beeper.wifi_failed()
         log.info("No known Wi-Fi network found")
@@ -506,8 +616,8 @@ async def _main() -> None:
     tasks.append(asyncio.create_task(_flash_writer_task()))
     tasks.append(asyncio.create_task(_flash_quota_task()))
 
-    # BLE is a FALLBACK, not run alongside a working Wi-Fi web UI.
-    # Confirmed on hardware (264 KB RAM RP2040, non-frozen filesystem
+    # BLE is a FALLBACK at boot, not started alongside a working Wi-Fi web
+    # UI. Confirmed on hardware (264 KB RAM RP2040, non-frozen filesystem
     # deploy): Wi-Fi web server + BLE GATT + the ADC pipeline all live at
     # once sits right at this board's capacity — sometimes raising
     # MemoryError even with the heaviest modules (microdot.py, webserver.py)
@@ -517,6 +627,16 @@ async def _main() -> None:
     # richer Wi-Fi web UI when it's available and only fall back to BLE
     # when Wi-Fi isn't configured or fails to connect — matching the
     # earlier prototype's own README note that most tracks have no Wi-Fi.
+    #
+    # This is boot-time policy only. Once BLE is running (i.e. we land in
+    # this branch), it now also accepts a "start Wi-Fi" command
+    # (CMD_WIFI_START — see _do_wifi_start_async()) that deliberately DOES
+    # keep BLE alive alongside the resulting Wi-Fi web UI, rather than
+    # stopping BLE the way this boot path would. That's a narrower,
+    # opt-in exception to the rule above, gated by a free-heap check
+    # (CONFIG.WIFI_MIN_FREE_BYTES) instead of hardware measurement, since a
+    # driver explicitly asking to bring Wi-Fi up over BLE presumably still
+    # wants BLE control afterwards (e.g. to stop Wi-Fi again).
     wifi_up = False
     if START_WIFI:
         wifi_up = await _wifi_task()

@@ -35,3 +35,15 @@ FLASH_LOW_WARN       = 96 * 1024   # beeper "flash-low" warning threshold
 # the floor is hit instead of just stopping. Off by default: silently
 # deleting a driver's data is worse than telling them to unload it.
 FLASH_AUTO_ROTATE    = False
+
+# ── BLE-triggered dynamic Wi-Fi start ───────────────────────────────────────
+# Free-heap floor main.py checks before starting Wi-Fi + the web server on a
+# BLE "start Wi-Fi" command, refusing (and beeping command_rejected) rather
+# than risking a MemoryError if it's not met. Unlike FLASH_MIN_FREE above,
+# this is a judgement call, not a hardware measurement: the README's "What's
+# still unverified" notes that Wi-Fi+BLE+web-server-together's headroom on a
+# *frozen* build hasn't been measured, and this dynamic path deliberately
+# keeps BLE running alongside Wi-Fi afterwards (unlike the boot-time path,
+# which treats BLE as a strict fallback — see main.py). Tune this after
+# testing the BLE-start path on real hardware.
+WIFI_MIN_FREE_BYTES  = 40 * 1024

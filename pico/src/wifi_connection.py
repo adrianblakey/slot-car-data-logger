@@ -101,6 +101,12 @@ class WiFiConnection:
     def connected(self) -> bool:
         return self._wlan.isconnected()
 
+    def disconnect(self) -> None:
+        """Tear the radio down. Counterpart to connect() for a BLE-triggered
+        stop — main.py cancels the web server/monitor tasks itself first."""
+        self._wlan.active(False)
+        self._ip = None
+
     async def monitor(self, interval_s: int = 10) -> None:
         """Log link drops; does not attempt to reconnect (matches the
         reference's Wi-Fi task scope — reconnect logic is future work)."""

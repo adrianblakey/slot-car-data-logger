@@ -68,6 +68,18 @@ class Profile:
                 setattr(self, k, kwargs[k])
         return self.save()
 
+    def rotate_lane(self):
+        """Advance to the next lane colour, wrapping after the last one."""
+        n = len(LANE_COLORS)
+        self.lane = (self.lane % n) + 1
+        return self.save()
+
+    def toggle_race(self):
+        """Flip between 'practice' and 'race'; anything else collapses to
+        'practice' first (so a toggle always lands on one of the two)."""
+        self.race = 'practice' if self.race == 'race' else 'race'
+        return self.save()
+
     def as_dict(self):
         return {k: getattr(self, k) for k in _DEFAULTS}
 

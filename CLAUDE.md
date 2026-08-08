@@ -76,13 +76,27 @@ talks to Core 0 only through a lock-guarded ring buffer of plain integers
 (`array.array`) — never allocate or touch asyncio/logging from Core-1-side
 code (see `_core1_exception_handler`'s docstring in `main.py`).
 
-**BLE is a fallback, not a peer of Wi-Fi.** `main.py`'s `_main()` only
-starts the BLE task if Wi-Fi is unconfigured or failed to connect — running
-Wi-Fi web server + BLE GATT + the ADC pipeline simultaneously was confirmed
-on real hardware to sit right at this board's memory ceiling. Don't change
-this to "start both whenever both are configured" without re-verifying
-against that constraint (a frozen `./build.sh` build might have enough
-headroom to lift it, but that hasn't been measured — see README).
+**BLE is a fallback at boot, not a peer of Wi-Fi.** `main.py`'s `_main()`
+only starts the BLE task if Wi-Fi is unconfigured or failed to connect —
+running Wi-Fi web server + BLE GATT + the ADC pipeline simultaneously was
+confirmed on real hardware to sit right at this board's memory ceiling.
+Don't change this boot-time policy to "start both whenever both are
+configured" without re-verifying against that constraint (a frozen
+`./build.sh` build might have enough headroom to lift it, but that hasn't
+been measured — see README).
+
+That policy has one deliberate, narrower exception: once BLE is running,
+its control characteristic accepts a "start Wi-Fi" command
+(`CMD_WIFI_START`, see `main.py`'s `_do_wifi_start_async`) that *does*
+keep BLE alive alongside the resulting Wi-Fi connection, gated by a
+`gc.mem_free()` check against `CONFIG.WIFI_MIN_FREE_BYTES` rather than
+the hardware measurement the boot-time rule is based on. Confirmed
+working end-to-end on real hardware (a `bleak` central connected, started
+Wi-Fi over BLE, stayed connected through a real AP connect and the
+subsequent BLE-triggered stop) — but that threshold's margin under
+*sustained* dual operation, not just this one short round trip, is still
+unmeasured (see README "What's still unverified"). Don't conflate the
+two policies: the boot-time path still never runs both together.
 
 **Storage format:** each sample is an 8-byte packed binary record
 (`struct '<Hhhh'`: dt_ms, current centi-amps, track/supply centivolts) in

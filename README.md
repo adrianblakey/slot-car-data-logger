@@ -11,7 +11,7 @@ Pico 2 W (RP2350) project, which has an ST7789 display, a micro-SD card, and
 hardware-chained-DMA ADC capture. See "Departures from the Pico 2 W
 reference" below for what changed and why.
 
-**Status:** built and host-tested (`make host-test`, 46 tests), then deployed
+**Status:** built and host-tested (`make host-test`, 60 tests), then deployed
 to and exercised on a real Pico W. See "What's verified on hardware" and
 "What's still unverified" below.
 
@@ -257,9 +257,20 @@ home Wi-Fi network:
   and `tools/decode_log.py` correctly decodes a real device-written file
   pulled back over HTTP, including a lap marker row.
 - `ble_server.py` genuinely advertises (`bluetoothctl scan` from a Linux
-  host found `SCLogger-e6614c`) when Wi-Fi isn't up — full GATT
-  characteristic read/write from a client app wasn't tested, only
-  advertisement discovery.
+  host found `SCLogger-e6614c`) when Wi-Fi isn't up.
+- **Full BLE control surface, from a real central** (a `bleak` script over
+  the host's own Bluetooth adapter, connecting to the live device): every
+  command in the control characteristic's table — start/stop/mark, erase
+  (both refused-while-recording and allowed-while-stopped), lane rotate,
+  lane set (both a valid and an out-of-range value, the latter correctly
+  refused), race toggle, and Wi-Fi start/stop — round-tripped correctly
+  against the status and profile characteristics' actual values on
+  hardware, not just read back what was written. Wi-Fi start over BLE in
+  particular: the free-heap check passed, a real AP connection came up
+  (~6 s), and the BLE connection stayed alive throughout *and* through the
+  subsequent BLE-triggered Wi-Fi stop — confirming the deliberate
+  BLE+Wi-Fi-coexistence exception (see "BLE-triggered Wi-Fi" above)
+  actually works, not just that it doesn't crash.
 - `fatal_handler.py`'s crash pipeline: caught and persisted a real
   `MemoryError` (see below) to `/syslog/crashes/` exactly as designed.
 - **Beeper, audibly**: with the fixes below, all 12 named patterns
@@ -273,7 +284,7 @@ home Wi-Fi network:
   off the device and decoded — exactly one marker row, in the right
   position, with the rest of the data intact.
 
-**Found and fixed on hardware** (six issues; the first three share a root
+**Found and fixed on hardware** (eight issues; the first three share a root
 cause — this board has 264 KB of RAM and no headroom to spare):
 
 1. Importing `ble_server` then `webserver` back-to-back with no
@@ -326,6 +337,28 @@ cause — this board has 264 KB of RAM and no headroom to spare):
    at construction and never touched again; "silence" is 20 kHz (above
    typical adult hearing) instead of a low audible frequency — `_tone()`
    only ever calls `.freq()`.
+7. **BLE lane/race commands changed state but the profile characteristic
+   didn't reflect it** — `CMD_LANE_ROTATE`/`CMD_LANE_SET`/`CMD_RACE_TOGGLE`
+   mutate the `PROFILE` singleton directly; the profile characteristic's
+   *stored* value only got refreshed by `_profile_task`, which only runs
+   when a central writes JSON to that characteristic — a different path
+   these commands never touch. A central reading profile right after one
+   of these commands saw stale data. Fixed by adding
+   `BLEServer.refresh_profile()` and having `main.py` call it after each
+   of the three mutations; confirmed fixed by the same `bleak` script
+   reading back the actual new lane/race values afterward.
+8. **`make sync` silently never updated an already-deployed device** —
+   `mpremote fs cp -r pico/src :src` copies *into* `:src` when it already
+   exists (true for any device past its first `make deploy`), landing the
+   new files at `:src/src/*` while the real, imported `:src/*` stayed
+   untouched. Every other file-content check in this bring-up log worked
+   because it happened right after a fresh `make deploy`; this one didn't
+   surface until iterating with `make sync` against an already-deployed
+   board while testing the BLE control expansion. Fixed to match
+   `deploy`'s already-correct pattern — `cp -r` into the *parent* (`:`),
+   letting the local directory's own basename become the top-level name —
+   confirmed by re-running `make sync` and checking `:src`/`:tests` came
+   back flat.
 
 **Operational lesson for future debugging on this board**: interrupting a
 running Wi-Fi/BLE session with Ctrl-C (`mpremote ... resume exec`) rather
@@ -339,15 +372,19 @@ hardware failure against a *genuinely* clean reset before trusting it.
 
 ### What's still unverified
 
-- BLE GATT characteristic read/write from a real client app — only
-  advertisement discovery was confirmed, not a full connection (and BLE
-  now only runs when Wi-Fi is absent, so this needs a Wi-Fi-less test).
 - Flash budget and the Wi-Fi+BLE-concurrently restriction under a
   **frozen** `./build.sh` build — only the unfrozen `make deploy` footprint
   has been measured; frozen modules don't pay the live-compile RAM cost
   this session's fixes work around, so a frozen build might not need the
   BLE-as-fallback restriction at all. Untested — no Docker available in
   this environment.
+- `CONFIG.WIFI_MIN_FREE_BYTES`'s safety margin under *sustained* BLE+Wi-Fi
+  operation. The BLE-triggered Wi-Fi start/stop round trip itself is now
+  confirmed working end-to-end on hardware (see above) — the check passed,
+  Wi-Fi came up, BLE stayed connected — but that was one short test, not a
+  long-running session with both active and the ADC pipeline under real
+  load. The threshold is still a judgement call, not a measured safe
+  minimum.
 
 ---
 
@@ -448,6 +485,10 @@ duplicates, so it's safe to run again.
 | Three low notes | Flash full — capture stopped |
 | Three low notes, repeating | Fatal error (repeats until auto-reboot) |
 | Short tick, once per second | Factory-reset countdown (Button A held at boot) |
+| Two descending notes | Wi-Fi stopped (BLE command) |
+| Two-note up-blip | Lane or race type changed (BLE command) |
+| Same low note, twice | Sessions erased (BLE command) |
+| Single low, held note | BLE command rejected (still recording, lane out of range, or not enough free heap for Wi-Fi) |
 
 ---
 
@@ -459,16 +500,52 @@ duplicates, so it's safe to run again.
 - **BLE**: a Device Information service (with the current IP address folded
   into the firmware-revision characteristic, so a phone paired over BLE but
   not on the same Wi-Fi can still find the web UI) and a custom Logger
-  service with status (notify), control (write: start/stop/mark), and
-  profile (read/write/notify) characteristics.
+  service with status (notify), control (write, one byte per command — see
+  table below), and profile (read/write/notify) characteristics.
 
-BLE is a **fallback**, not run alongside a working Wi-Fi connection: it
-only starts if Wi-Fi isn't configured or fails to connect. Confirmed on
-hardware that running both plus the ADC pipeline at once is right at this
-264 KB-RAM board's capacity under a non-frozen deploy — see "What's
-verified on hardware" for the measurements this is based on. Most tracks
-have no Wi-Fi at all (per the earlier prototype's own notes), so BLE
-covers exactly the case where it matters.
+BLE is a **fallback at boot**, not started alongside a Wi-Fi connection
+that's already up: it only starts if Wi-Fi isn't configured or fails to
+connect. Confirmed on hardware that running Wi-Fi + BLE + the ADC pipeline
+all at once is right at this 264 KB-RAM board's capacity under a non-frozen
+deploy — see "What's verified on hardware" for the measurements this is
+based on. Most tracks have no Wi-Fi at all (per the earlier prototype's own
+notes), so BLE covers exactly the case where it matters.
+
+### BLE control characteristic
+
+One byte per command, written to the Logger service's control
+characteristic (`CMD_LANE_SET` takes a second payload byte):
+
+| Byte | Command | Notes |
+|------|---------|-------|
+| 0 | Stop capture | |
+| 1 | Start capture | new session file |
+| 2 | Lap marker | only while capturing |
+| 3 | Erase all sessions | refused (`command_rejected` beep) if still capturing |
+| 4 | Start Wi-Fi | see "BLE-triggered Wi-Fi" below |
+| 5 | Stop Wi-Fi | tears down the web server, back to BLE-only |
+| 6 | Rotate lane | advances to the next lane colour, wraps after the last one |
+| 7 | Set lane | byte 2: lane number, 1-8 |
+| 8 | Toggle race type | flips `practice` <-> `race` |
+
+Lane and race changes go through the same `session_profile.py` `PROFILE`
+singleton the web UI's profile form and BLE's profile characteristic
+already use, so they're persisted and reflected there too, not a separate
+side channel.
+
+### BLE-triggered Wi-Fi
+
+Commands 4/5 are a deliberate, narrow exception to "BLE is a fallback"
+above: unlike the boot-time path, starting Wi-Fi from a running BLE
+connection keeps BLE alive afterwards rather than stopping it — the
+assumption being that a driver who just asked for Wi-Fi over BLE probably
+still wants BLE control (not least to stop Wi-Fi again). Since that
+means Wi-Fi *can* end up running alongside BLE — the exact combination
+the boot-time fallback exists to avoid — command 4 first checks free heap
+against `CONFIG.WIFI_MIN_FREE_BYTES` and refuses (beeping
+`command_rejected`) rather than risking a `MemoryError` if it's not met.
+That threshold is a judgement call, not a hardware measurement — see
+"What's still unverified".
 
 ---
 
